@@ -100,14 +100,21 @@ export function createHud2D({ onSelectPoi, onDeselect, onScan }) {
 
   const pos = { x: 0, y: 0, visible: true }
   let acc = 0
+  let reticleOn = true
 
   return {
     root,
     setPois,
-    setStatic({ seed, resolution }) {
-      q(sector, 'sectorId').textContent = `SECTOR ID: 465-NKJ-${String(seed).padStart(4, '0')}K`
-      q(sector, 'gps').textContent = `GPS: 46.4076, 11.8524 · GRID 56×56`
-      q(sector, 'meta').textContent = `SEED ${String(seed).padStart(4, '0')} · MESH ${resolution}²`
+    setStatic(p) {
+      const real = p.source === 'real'
+      q(sector, 'sectorId').textContent = `SECTOR ID: 465-NKJ-${String(p.seed).padStart(4, '0')}K`
+      sector.querySelector('.hud-strong').textContent = real ? p.demLocation.toUpperCase() : 'PROCEDURAL RANGE'
+      q(sector, 'gps').textContent = real
+        ? `GPS: ${p.demLat.toFixed(4)}, ${p.demLon.toFixed(4)} · Z${p.demZoom}`
+        : 'GPS: 46.4076, 11.8524 · GRID 56×56'
+      q(sector, 'meta').textContent = real
+        ? 'ELEV: TERRAIN TILES © MAPZEN/TILEZEN'
+        : `SEED ${String(p.seed).padStart(4, '0')} · MESH ${p.resolution}²`
     },
     setSelected(i, poi) {
       selected = i
@@ -124,9 +131,11 @@ export function createHud2D({ onSelectPoi, onDeselect, onScan }) {
     },
     update(dt, camera, w, h, data) {
       // anchored: reticle on the cone
-      project(camera, w, h, data.conePoint, pos)
-      reticle.style.transform = `translate(${pos.x.toFixed(1)}px, ${pos.y.toFixed(1)}px)`
-      reticle.style.opacity = pos.visible ? 1 : 0
+      if (reticleOn) {
+        project(camera, w, h, data.conePoint, pos)
+        reticle.style.transform = `translate(${pos.x.toFixed(1)}px, ${pos.y.toFixed(1)}px)`
+        reticle.style.opacity = pos.visible ? 1 : 0
+      }
 
       // anchored: POI markers
       data.pois.forEach((p, i) => {
@@ -161,6 +170,10 @@ export function createHud2D({ onSelectPoi, onDeselect, onScan }) {
     },
     setVisible(vis) {
       root.style.display = vis ? 'block' : 'none'
+    },
+    setReticleVisible(vis) {
+      reticleOn = vis
+      reticle.style.display = vis ? '' : 'none'
     },
     setOpacity(o) {
       root.style.opacity = o

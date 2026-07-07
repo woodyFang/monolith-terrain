@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { Simplex2, mulberry32, fbm, ridged, smoothstep, lerp } from './noise.js'
+import { sampleDem } from './dem.js'
 
 export const TERRAIN_SIZE = 56
 export const BASIN_RADIUS = 6.6 // flat excavation floor
@@ -152,12 +153,49 @@ if (uScanT >= 0.0) {
     this.mesh = new THREE.Mesh(new THREE.BufferGeometry(), this.material)
     this.mesh.receiveShadow = true
     this.mesh.castShadow = true
+    this.dem = null // real-world heightfield, set via setDem()
     this.rebuild(params)
     this.rebuildRoughness(params)
   }
 
+  setDem(dem) {
+    this.dem = dem
+  }
+
+  // scene height → display elevation in feet (real when a DEM drives the terrain)
+  heightToFeet(h) {
+    return this._h2ft ? this._h2ft(h) : Math.round(4800 + h * 420)
+  }
+
+  // Sampler over a fetched real-world DEM: world xz → bilinear meters → scene units.
+  _makeDemSampler(params) {
+    const dem = this.dem
+    const scale = (TERRAIN_SIZE / dem.extentMeters) * params.demExaggeration
+    const meanM = dem.meanM
+    this._h2ft = (h) => Math.round((h / scale + meanM) * 3.28084)
+
+    const sDetail = new Simplex2(mulberry32(params.seed))
+    const { size } = dem
+    const { detail, detailScale } = params
+
+    return (x, z) => {
+      const px = (x / TERRAIN_SIZE + 0.5) * (size - 1)
+      const py = (z / TERRAIN_SIZE + 0.5) * (size - 1)
+      let h = (sampleDem(dem, px, py) - meanM) * scale
+
+      // optional fine grain on top of the (smoother) 30m-class data
+      const fine =
+        detail * fbm(sDetail, x * detailScale, z * detailScale, 3, 2.3, 0.55) +
+        detail * 0.35 * fbm(sDetail, x * detailScale * 4.1 + 31, z * detailScale * 4.1 - 17, 2, 2.2, 0.5)
+      // no basin carve in real-world mode — the map runs uninterrupted
+      return h + fine
+    }
+  }
+
   // Height field sampler for the current seed — kept so other objects can query it.
   _makeSampler(params) {
+    if (params.source === 'real' && this.dem) return this._makeDemSampler(params)
+    this._h2ft = null // procedural: fictional elevations
     const rng = mulberry32(params.seed)
     const sWarp = new Simplex2(rng)
     const sRidge = new Simplex2(rng)

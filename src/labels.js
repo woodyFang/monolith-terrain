@@ -67,40 +67,43 @@ function settleHeight(sample, x, z, halfW) {
   return h + 0.14
 }
 
-export function createLabels(sample, seed) {
+export function createLabels(sample, seed, { real = false, toFeet } = {}) {
   const group = new THREE.Group()
   const rng = mulberry32(seed * 13 + 29)
 
-  // one big region label across the mid-ground, like the reference's spread caps
-  const region = makeLabelMesh('N A V A J O   P L A T E A U', { size: 110, italic: false, spacing: 0.9, opacity: 0.78 }, 22)
-  region.rotation.x = -Math.PI / 2
-  region.position.set(0, 0, -12.5)
-  region.position.y = settleHeight(sample, 0, -12.5, 11)
-  group.add(region)
+  // fictional cartography only in procedural mode — real-world maps get real data only
+  if (!real) {
+    const region = makeLabelMesh('N A V A J O   P L A T E A U', { size: 110, italic: false, spacing: 0.9, opacity: 0.78 }, 22)
+    region.rotation.x = -Math.PI / 2
+    region.position.set(0, 0, -12.5)
+    region.position.y = settleHeight(sample, 0, -12.5, 11)
+    group.add(region)
 
-  // scattered place names outside the basin
-  const names = [...PLACE_NAMES].sort(() => rng() - 0.5).slice(0, 7)
-  names.forEach((name) => {
-    const angle = rng() * Math.PI * 2
-    const dist = BASIN_BLEND + 2.5 + rng() * 12
-    const x = Math.cos(angle) * dist
-    const z = Math.sin(angle) * dist
-    const width = 3.6 + rng() * 1.8
-    const mesh = makeLabelMesh(name, { size: 96, italic: true, spacing: 0.3, opacity: 0.85 }, width)
-    mesh.rotation.x = -Math.PI / 2
-    mesh.rotation.z = (rng() - 0.5) * 0.7
-    mesh.position.set(x, settleHeight(sample, x, z, width / 2), z)
-    group.add(mesh)
-  })
+    const names = [...PLACE_NAMES].sort(() => rng() - 0.5).slice(0, 7)
+    names.forEach((name) => {
+      const angle = rng() * Math.PI * 2
+      const dist = BASIN_BLEND + 2.5 + rng() * 12
+      const x = Math.cos(angle) * dist
+      const z = Math.sin(angle) * dist
+      const width = 3.6 + rng() * 1.8
+      const mesh = makeLabelMesh(name, { size: 96, italic: true, spacing: 0.3, opacity: 0.85 }, width)
+      mesh.rotation.x = -Math.PI / 2
+      mesh.rotation.z = (rng() - 0.5) * 0.7
+      mesh.position.set(x, settleHeight(sample, x, z, width / 2), z)
+      group.add(mesh)
+    })
+  }
 
-  // spot elevations: small numbers with a tick dot, like benchmark markers
-  for (let i = 0; i < 9; i++) {
+  // spot elevations: real feet when a DEM drives the terrain
+  const spotCount = real ? 14 : 9
+  const minDist = real ? 3 : BASIN_BLEND + 1
+  for (let i = 0; i < spotCount; i++) {
     const angle = rng() * Math.PI * 2
-    const dist = BASIN_BLEND + 1 + rng() * 14
+    const dist = minDist + rng() * (24 - minDist)
     const x = Math.cos(angle) * dist
     const z = Math.sin(angle) * dist
     const h = sample(x, z)
-    const feet = Math.round(4800 + h * 420 + rng() * 40)
+    const feet = toFeet ? toFeet(h) : Math.round(4800 + h * 420 + rng() * 40)
     const mesh = makeLabelMesh(`· ${feet}`, { size: 78, italic: false, spacing: 0.06, opacity: 0.85, color: '#2a241c' }, 1.5)
     mesh.rotation.x = -Math.PI / 2
     mesh.position.set(x, h + 0.12, z)

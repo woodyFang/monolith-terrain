@@ -53,7 +53,7 @@ function refine(sample, x, z, sign = 1) {
 }
 
 // Scan the terrain for named points of interest: 4 highest peaks + 1 depression.
-export function findPois(sample, seed) {
+export function findPois(sample, seed, toFeet = (h) => Math.round(4800 + h * 420)) {
   const cands = []
   for (let a = 0; a < 360; a += 4) {
     for (let r = 9.5; r <= 20.5; r += 1.2) {
@@ -76,7 +76,7 @@ export function findPois(sample, seed) {
   const pois = picked.map((p, i) => ({ ...p, id: `PK-0${i + 1}`, kind: 'PEAK' }))
   pois.push({ ...low, id: 'DEP-05', kind: 'BASIN' })
   pois.forEach((p) => {
-    p.feet = Math.round(4800 + p.h * 420)
+    p.feet = toFeet(p.h)
     p.grid = `E ${(p.x + 28).toFixed(1)} · N ${(p.z + 28).toFixed(1)}`
     p.top = new THREE.Vector3(p.x, p.h + 2.1, p.z)
   })
@@ -232,15 +232,14 @@ export function createHud3D(seed, pois, { ink, accent }) {
   const group = new THREE.Group()
   const baseY = FLOOR_Y + 0.02
 
+  // dial + rings + sweep live in their own subgroup so real-world mode can hide them
+  const platform = new THREE.Group()
   const dial = flatPlane(canvasTex(2048, (ctx, s) => drawDial(ctx, s, ink, accent, rng)), 12.6, baseY, 0.95)
-  group.add(dial)
-
   const ringA = flatPlane(canvasTex(1024, (ctx, s) => drawDashRing(ctx, s, ink, 0.86, 24)), 10.6, baseY + 0.02, 0.85)
   const ringB = flatPlane(canvasTex(1024, (ctx, s) => drawDashRing(ctx, s, accent, 0.62, 48)), 8.0, baseY + 0.03, 0.7)
-  group.add(ringA, ringB)
-
   const sweep = flatPlane(canvasTex(1024, (ctx, s) => drawSweep(ctx, s, accent)), 12.2, baseY + 0.01, 0.8)
-  group.add(sweep)
+  platform.add(dial, ringA, ringB, sweep)
+  group.add(platform)
 
   // POI stems: thin vertical hairline + accent cap marker
   const stemMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(ink), transparent: true, opacity: 0.6 })
@@ -281,6 +280,7 @@ export function createHud3D(seed, pois, { ink, accent }) {
   return {
     group,
     lines,
+    platform,
     pulse() {
       const p = flatPlane(pulseTex, 1, baseY + 0.05, 0.8)
       p.userData.age = 0

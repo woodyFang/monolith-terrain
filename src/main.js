@@ -22,10 +22,30 @@ import { createCone } from './cone.js'
 import { createLabels, disposeLabels } from './labels.js'
 import { createHud3D, findPois } from './hud3d.js'
 import { createHud2D } from './hud2d.js'
+import { loadDem } from './dem.js'
 
 // ------------------------------------------------------------------ params
 
+const DEM_PRESETS = {
+  'Monument Valley': [36.998, -110.0984],
+  'Grand Canyon': [36.0997, -112.1124],
+  Matterhorn: [45.9766, 7.6585],
+  'Mount Fuji': [35.3606, 138.7274],
+  'Death Valley': [36.2679, -116.8253],
+  'Everest Massif': [27.9881, 86.925],
+  Landmannalaugar: [63.983, -19.056],
+  Custom: null,
+}
+
 const params = {
+  // terrain source
+  source: 'real',
+  demLocation: 'Monument Valley',
+  demLat: 36.998,
+  demLon: -110.0984,
+  demZoom: 12,
+  demExaggeration: 1.6,
+
   // terrain generation
   seed: 7,
   scale: 0.055,
@@ -107,6 +127,20 @@ const params = {
   flyEasing: 'smooth',
   paused: false,
 
+  // tour
+  tourFrom: 'PK-01',
+  tourTo: 'PK-02',
+  tourDuration: 14,
+  tourAltitude: 2.5,
+  tourSmoothing: 0.7,
+  tourLook: 0.1,
+  tourBank: 0.8,
+
+  // performance
+  pixelRatio: Math.min(window.devicePixelRatio, 2),
+  shadowMode: 'dynamic',
+  shadowRes: 2048,
+
   // light
   sunIntensity: 8.3,
   sunAzimuth: 64,
@@ -127,7 +161,7 @@ const renderer = new THREE.WebGLRenderer({
   stencil: false,
   depth: false,
 })
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+renderer.setPixelRatio(params.pixelRatio)
 renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.shadowMap.enabled = true
 // VSM so the shadow blur radius is a real, adjustable softness control
@@ -188,8 +222,15 @@ function placeSun() {
   sun.position.set(Math.cos(az) * Math.cos(el) * r, Math.sin(el) * r, Math.sin(az) * Math.cos(el) * r)
   sun.intensity = params.sunIntensity
   hemi.intensity = params.hemiIntensity
+  if (params.shadowMode === 'static') renderer.shadowMap.needsUpdate = true
 }
 placeSun()
+
+function applyShadowMode() {
+  sun.castShadow = params.shadowMode !== 'off'
+  renderer.shadowMap.autoUpdate = params.shadowMode === 'dynamic'
+  if (params.shadowMode === 'static') renderer.shadowMap.needsUpdate = true
+}
 
 // ------------------------------------------------------------------ world
 
@@ -199,14 +240,15 @@ scene.add(terrain.mesh)
 const cone = createCone()
 scene.add(cone.group)
 
-let labels = createLabels(terrain.sample, params.seed)
+const labelOpts = () => ({ real: params.source === 'real', toFeet: (h) => terrain.heightToFeet(h) })
+let labels = createLabels(terrain.sample, params.seed, labelOpts())
 labels.visible = params.labels
 scene.add(labels)
 
 function regenerateLabels() {
   scene.remove(labels)
   disposeLabels(labels)
-  labels = createLabels(terrain.sample, params.seed)
+  labels = createLabels(terrain.sample, params.seed, labelOpts())
   labels.visible = params.labels
   scene.add(labels)
 }
@@ -231,7 +273,8 @@ let selectedPoi = -1
 let fps = 60
 let scanStart = -1
 
-let pois = findPois(terrain.sample, params.seed)
+const poiFeet = (h) => terrain.heightToFeet(h)
+let pois = findPois(terrain.sample, params.seed, poiFeet)
 let hud3 = createHud3D(params.seed, pois, { ink: params.hudInk, accent: params.hudAccent })
 hud3.lines.visible = params.surveyLines
 scene.add(hud3.group)
@@ -245,8 +288,171 @@ function flyTo(pos, target) {
   tween.active = true
 }
 
+// pose to restore when a selection is closed: wherever the camera was pre-click
+const returnPose = { saved: false, pos: new THREE.Vector3(), target: new THREE.Vector3() }
+
+// ------------------------------------------------------------------ tour mode
+
+// One continuous Catmull-Rom spline: current camera pose → above the FROM poi →
+// arc across the terrain → standoff short of the TO poi. Sampled by ARC LENGTH
+// (uniform speed), driven by a trapezoidal velocity profile, with all rotation
+// going through a damped "gimbal" controller so snaps are impossible.
+
+const TOUR_N = 240
+const tour = {
+  active: false,
+  t: 0,
+  bank: 0,
+  uA: 0.2, // arc-length fraction where the path passes over the FROM poi
+  curve: null,
+  aTop: new THREE.Vector3(),
+  bTop: new THREE.Vector3(),
+}
+const _tp = new THREE.Vector3()
+const _tg = new THREE.Vector3()
+const _tt0 = new THREE.Vector3()
+const _tt1 = new THREE.Vector3()
+const _tm = new THREE.Matrix4()
+const _tq = new THREE.Quaternion()
+const _tqr = new THREE.Quaternion()
+const Z_AXIS = new THREE.Vector3(0, 0, 1)
+const UP = new THREE.Vector3(0, 1, 0)
+
+function boxBlur(arr, radius, passes = 1) {
+  let a = arr
+  for (let p = 0; p < passes; p++) {
+    const out = new Float32Array(a.length)
+    for (let i = 0; i < a.length; i++) {
+      let s = 0
+      let c = 0
+      for (let j = Math.max(0, i - radius); j <= Math.min(a.length - 1, i + radius); j++) {
+        s += a[j]
+        c++
+      }
+      out[i] = s / c
+    }
+    a = out
+  }
+  return a
+}
+
+// trapezoidal velocity: accelerate → cruise at constant speed → decelerate
+function trapezoid(t, r) {
+  t = THREE.MathUtils.clamp(t, 0, 1)
+  if (t < r) return (t * t) / (2 * r * (1 - r))
+  if (t > 1 - r) {
+    const u = 1 - t
+    return 1 - (u * u) / (2 * r * (1 - r))
+  }
+  return (t - r / 2) / (1 - r)
+}
+
+function startTour() {
+  const A = pois.find((p) => p.id === params.tourFrom)
+  const B = pois.find((p) => p.id === params.tourTo)
+  if (!A || !B || A === B) return
+
+  // ground path A → standoff short of B (ending on B itself would degenerate
+  // to a vertical view), arced sideways for a more interesting line
+  const a = new THREE.Vector3(A.x, 0, A.z)
+  const bFull = new THREE.Vector3(B.x, 0, B.z)
+  const dist = a.distanceTo(bFull)
+  const dirAB = bFull.clone().sub(a).normalize()
+  const b = bFull.clone().addScaledVector(dirAB, -Math.min(7, dist * 0.4))
+  const mid = a.clone().add(b).multiplyScalar(0.5)
+  mid.addScaledVector(new THREE.Vector3(-dirAB.z, 0, dirAB.x), dist * 0.22)
+
+  const px = new Float32Array(TOUR_N)
+  const pz = new Float32Array(TOUR_N)
+  const ground = new Float32Array(TOUR_N)
+  for (let i = 0; i < TOUR_N; i++) {
+    const t = i / (TOUR_N - 1)
+    const u = 1 - t
+    px[i] = u * u * a.x + 2 * u * t * mid.x + t * t * b.x
+    pz[i] = u * u * a.z + 2 * u * t * mid.z + t * t * b.z
+    ground[i] = terrain.sample(px[i], pz[i])
+  }
+
+  // altitude: clearance envelope (rolling max) blurred hard — rises over
+  // mountains as one long swell, never tracks bumps
+  const radius = Math.round(4 + params.tourSmoothing * 30)
+  const envelope = new Float32Array(TOUR_N)
+  for (let i = 0; i < TOUR_N; i++) {
+    let m = -Infinity
+    for (let j = Math.max(0, i - radius); j <= Math.min(TOUR_N - 1, i + radius); j++) m = Math.max(m, ground[j])
+    envelope[i] = m
+  }
+  const smoothY = boxBlur(envelope, radius, 3)
+
+  // one continuous spline starting at the CURRENT camera position — the
+  // approach is just the first leg of the same flight, no phase transition
+  const pts = [camera.position.clone()]
+  for (let i = 0; i < TOUR_N; i += 20) pts.push(new THREE.Vector3(px[i], smoothY[i] + params.tourAltitude, pz[i]))
+  pts.push(new THREE.Vector3(px[TOUR_N - 1], smoothY[TOUR_N - 1] + params.tourAltitude, pz[TOUR_N - 1]))
+  tour.curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal', 0.5)
+  tour.curve.arcLengthDivisions = 400
+  tour.curve.updateArcLengths()
+
+  // arc-length fraction where we pass over the FROM poi (gaze switches there)
+  let bestD = Infinity
+  for (let i = 0; i <= 200; i++) {
+    const s = i / 200
+    tour.curve.getPointAt(s, _tp)
+    const d = Math.hypot(_tp.x - A.x, _tp.z - A.z)
+    if (d < bestD) {
+      bestD = d
+      tour.uA = s
+    }
+  }
+
+  tour.aTop.set(A.x, A.h + 0.6, A.z)
+  tour.bTop.set(B.x, B.h + 0.6, B.z)
+  tour.bank = 0
+  tour.t = 0
+  tour.active = true
+  tween.active = false
+}
+
+// gaze target along the flight: frame the FROM poi on approach, then look
+// ahead down the path, converging onto the TO poi at the end
+function tourGaze(s, camPos, out) {
+  const ahead = Math.min(s + params.tourLook, 1)
+  tour.curve.getPointAt(ahead, out)
+  out.y -= params.tourAltitude * 0.7 // gaze slightly below the flight line
+  // hand the gaze off BEFORE we're overhead the FROM poi — looking straight
+  // down while passing over it flips the heading violently
+  const fromBlend = THREE.MathUtils.smoothstep(s, tour.uA * 0.15, tour.uA * 0.75)
+  out.lerp(tour.aTop, 1 - fromBlend)
+  out.lerp(tour.bTop, THREE.MathUtils.smoothstep(s, 0.85, 1))
+
+  // pitch clamp: never look down steeper than ~72°, pushing the gaze point
+  // forward instead — guards against gimbal flips in every configuration
+  const dx = out.x - camPos.x
+  const dz = out.z - camPos.z
+  const horiz = Math.hypot(dx, dz)
+  const drop = camPos.y - out.y
+  const minHoriz = drop * 0.33
+  if (drop > 0 && horiz < minHoriz) {
+    if (horiz > 1e-4) {
+      const k = minHoriz / horiz
+      out.x = camPos.x + dx * k
+      out.z = camPos.z + dz * k
+    } else {
+      tour.curve.getTangentAt(s, _tt0)
+      out.x = camPos.x + _tt0.x * minHoriz
+      out.z = camPos.z + _tt0.z * minHoriz
+    }
+  }
+  return out
+}
+
 const hud2 = createHud2D({
   onSelectPoi(i) {
+    if (selectedPoi === -1) {
+      returnPose.pos.copy(camera.position)
+      returnPose.target.copy(controls.target)
+      returnPose.saved = true
+    }
     selectedPoi = i
     const p = pois[i]
     hud2.setSelected(i, p)
@@ -256,7 +462,8 @@ const hud2 = createHud2D({
   onDeselect() {
     selectedPoi = -1
     hud2.setSelected(-1, null)
-    flyTo(HOME.pos, HOME.target)
+    flyTo(returnPose.saved ? returnPose.pos : HOME.pos, returnPose.saved ? returnPose.target : HOME.target)
+    returnPose.saved = false
   },
   onScan() {
     scanStart = performance.now() / 1000
@@ -272,13 +479,25 @@ document.documentElement.style.setProperty('--hud-ink', params.hudInk)
 document.documentElement.style.setProperty('--hud-blur', `${params.uiBlur}px`)
 document.documentElement.style.setProperty('--hud-bg-alpha', params.uiBgOpacity)
 
-// user grabbing the camera cancels any fly-to
-controls.addEventListener('start', () => (tween.active = false))
+// user grabbing the camera cancels any fly-to or tour
+controls.addEventListener('start', () => {
+  tween.active = false
+  tour.active = false
+  camera.up.set(0, 1, 0)
+})
+
+// real-world mode strips the fiction: no cone/reticle, no dial platform
+function applySourceMode() {
+  const real = params.source === 'real'
+  cone.group.visible = !real
+  hud3.platform.visible = !real
+  hud2.setReticleVisible(!real)
+}
 
 function regenerateHud() {
   scene.remove(hud3.group)
   hud3.dispose()
-  pois = findPois(terrain.sample, params.seed)
+  pois = findPois(terrain.sample, params.seed, poiFeet)
   hud3 = createHud3D(params.seed, pois, { ink: params.hudInk, accent: params.hudAccent })
   hud3.lines.visible = params.surveyLines
   scene.add(hud3.group)
@@ -286,7 +505,9 @@ function regenerateHud() {
   hud2.setStatic(params)
   selectedPoi = -1
   hud2.setSelected(-1, null)
+  applySourceMode()
 }
+applySourceMode()
 
 // ------------------------------------------------------------------ post: real depth-based DOF
 
@@ -323,8 +544,11 @@ grain.blendMode.opacity.value = params.grain
 const vignette = new VignetteEffect({ darkness: params.vignette, offset: 0.28 })
 const smaa = new SMAAEffect()
 
-composer.addPass(new EffectPass(camera, dof))
+const dofPass = new EffectPass(camera, dof)
+composer.addPass(dofPass)
 composer.addPass(new EffectPass(camera, exposureFx, toneMap, hueSat, contrastFx, grain, vignette, smaa))
+// skip the whole DOF pass when bokeh is zero — it's pure cost with no visual effect
+dofPass.enabled = params.bokehScale > 0
 
 // ------------------------------------------------------------------ pointer
 
@@ -343,6 +567,34 @@ window.addEventListener('pointermove', (e) => {
 
 // ------------------------------------------------------------------ regeneration helpers
 
+// ------------------------------------------------------------------ real-world DEM loading
+
+let dem = null
+let demBusy = false
+async function loadRealTerrain() {
+  if (demBusy) return
+  demBusy = true
+  loadingEl.textContent = 'fetching elevation tiles…'
+  loadingEl.classList.remove('hidden')
+  try {
+    dem = await loadDem({ lat: params.demLat, lon: params.demLon, zoom: params.demZoom })
+    terrain.setDem(dem)
+    params.source = 'real'
+    gui.controllersRecursive().forEach((c) => c.updateDisplay())
+    loadingEl.textContent = 'generating terrain…'
+    regenerateTerrain()
+  } catch (err) {
+    console.error('DEM load failed:', err)
+    loadingEl.textContent = 'elevation fetch failed — check connection'
+    setTimeout(() => {
+      loadingEl.classList.add('hidden')
+      loadingEl.textContent = 'generating terrain…'
+    }, 2600)
+  } finally {
+    demBusy = false
+  }
+}
+
 let rebuildPending = false
 function regenerateTerrain() {
   if (rebuildPending) return
@@ -355,6 +607,7 @@ function regenerateTerrain() {
       terrain.rebuildRoughness(params)
       regenerateLabels()
       regenerateHud()
+      if (params.shadowMode === 'static') renderer.shadowMap.needsUpdate = true
       rebuildPending = false
       loadingEl.classList.add('hidden')
     }, 30)
@@ -387,6 +640,43 @@ const copyCtrl = gui
     'copy'
   )
   .name('copy parameters')
+
+const fSource = gui.addFolder('Terrain source')
+fSource
+  .add(params, 'source', { 'procedural noise': 'noise', 'real world (DEM)': 'real' })
+  .name('source')
+  .onChange((v) => {
+    if (v === 'real') loadRealTerrain()
+    else regenerateTerrain()
+  })
+const latCtrl = { lat: null, lon: null }
+fSource
+  .add(params, 'demLocation', Object.keys(DEM_PRESETS))
+  .name('location')
+  .onChange((name) => {
+    const p = DEM_PRESETS[name]
+    if (!p) return // Custom: use the lat/lon fields below
+    params.demLat = p[0]
+    params.demLon = p[1]
+    latCtrl.lat.updateDisplay()
+    latCtrl.lon.updateDisplay()
+    if (params.source === 'real') loadRealTerrain()
+  })
+latCtrl.lat = fSource.add(params, 'demLat', -85, 85, 0.0001).name('latitude')
+latCtrl.lon = fSource.add(params, 'demLon', -180, 180, 0.0001).name('longitude')
+fSource
+  .add(params, 'demZoom', [10, 11, 12, 13, 14])
+  .name('detail (zoom)')
+  .onChange(() => {
+    if (params.source === 'real') loadRealTerrain()
+  })
+fSource
+  .add(params, 'demExaggeration', 0.5, 5, 0.1)
+  .name('vertical scale')
+  .onFinishChange(() => {
+    if (params.source === 'real') regenerateTerrain()
+  })
+fSource.add({ load: () => loadRealTerrain() }, 'load').name('load location ⤓')
 
 const fTerrain = gui.addFolder('Terrain')
 fTerrain.add(params, 'seed', 1, 9999, 1).onFinishChange(regenerateTerrain)
@@ -438,6 +728,7 @@ fCamera.add(params, 'focusRange', 0.5, 25, 0.1).name('focus range').onChange((v)
 })
 fCamera.add(params, 'bokehScale', 0, 8, 0.1).name('bokeh scale').onChange((v) => {
   dof.bokehScale = v
+  dofPass.enabled = v > 0
 })
 
 const fMap = gui.addFolder('Map overlay')
@@ -548,6 +839,47 @@ fMotion.add(params, 'bob', 0, 0.3, 0.01).name('hover bob')
 fMotion.add(params, 'ringSpeed', 0, 6, 0.1).name('ring speed')
 fMotion.add(params, 'flyDuration', 0.4, 4, 0.1).name('fly duration')
 fMotion.add(params, 'flyEasing', ['smooth', 'glide', 'linear']).name('fly easing')
+
+const POI_IDS = ['PK-01', 'PK-02', 'PK-03', 'PK-04', 'DEP-05']
+const fTour = gui.addFolder('Tour')
+fTour.add(params, 'tourFrom', POI_IDS).name('from')
+fTour.add(params, 'tourTo', POI_IDS).name('to')
+fTour.add(params, 'tourDuration', 4, 40, 0.5).name('duration (s)')
+fTour.add(params, 'tourAltitude', 0.8, 10, 0.1).name('altitude')
+fTour.add(params, 'tourSmoothing', 0, 1, 0.02).name('path smoothing')
+fTour.add(params, 'tourLook', 0.02, 0.3, 0.01).name('look ahead')
+fTour.add(params, 'tourBank', 0, 3, 0.05).name('bank into turns')
+fTour.add({ start: startTour }, 'start').name('▶ start tour')
+fTour.add(
+  {
+    stop: () => {
+      tour.active = false
+      camera.up.set(0, 1, 0)
+    },
+  },
+  'stop'
+).name('■ stop')
+
+const fPerf = gui.addFolder('Performance')
+fPerf
+  .add(params, 'pixelRatio', 0.5, 2, 0.05)
+  .name('render scale')
+  .onChange((v) => {
+    renderer.setPixelRatio(v)
+    composer.setSize(window.innerWidth, window.innerHeight)
+  })
+fPerf.add(params, 'shadowMode', ['dynamic', 'static', 'off']).name('shadows').onChange(applyShadowMode)
+fPerf
+  .add(params, 'shadowRes', [1024, 2048, 4096])
+  .name('shadow resolution')
+  .onChange((v) => {
+    sun.shadow.mapSize.set(v, v)
+    if (sun.shadow.map) {
+      sun.shadow.map.dispose()
+      sun.shadow.map = null
+    }
+    if (params.shadowMode === 'static') renderer.shadowMap.needsUpdate = true
+  })
 fMotion.add(params, 'paused')
 
 const fLight = gui.addFolder('Light')
@@ -564,13 +896,24 @@ fLight
   .name('shadow softness')
   .onChange((v) => (sun.shadow.radius = v))
 
+// only Terrain source and Tour start expanded
 fTerrain.close()
+fSurface.close()
+fCamera.close()
+fMap.close()
+fLook.close()
+fHud.close()
+fMotion.close()
+fPerf.close()
 fLight.close()
 
 // ------------------------------------------------------------------ loop
 
 // console access for debugging/scripting
-window.__exp = { scene, camera, controls, params, terrain, get labels() { return labels } }
+window.__exp = { scene, camera, controls, params, terrain, loadRealTerrain, get labels() { return labels } }
+
+// real world is the default source — fetch its tiles on startup
+if (params.source === 'real') loadRealTerrain()
 
 const clock = new THREE.Clock()
 
@@ -579,8 +922,40 @@ function tick() {
   const dt = Math.min(clock.getDelta(), 0.05)
   const t = clock.elapsedTime
 
-  // camera fly-to: timed ease with controls paused so damping can't fight the tween
-  if (tween.active) {
+  // cinematic tour: arc-length uniform speed + trapezoid profile + damped gimbal
+  if (tour.active) {
+    tour.t = Math.min(1, tour.t + dt / params.tourDuration)
+    const s = trapezoid(tour.t, 0.18)
+
+    // position: exact on the spline, constant speed thanks to getPointAt
+    tour.curve.getPointAt(s, _tp)
+    camera.position.copy(_tp)
+
+    // desired orientation: look at the gaze target, rolled into the turn
+    tourGaze(s, _tp, _tg)
+    controls.target.copy(_tg)
+    _tm.lookAt(camera.position, _tg, UP)
+    _tq.setFromRotationMatrix(_tm)
+    tour.curve.getTangentAt(s, _tt0)
+    tour.curve.getTangentAt(Math.min(s + 0.02, 1), _tt1)
+    const curl = _tt0.x * _tt1.z - _tt0.z * _tt1.x // signed xz turn over the window
+    const arrived = tour.t >= 1
+    // after arrival: settle — unwind the bank and let the gimbal fully converge
+    // before handing off, so OrbitControls has nothing to snap to
+    const bankTarget = arrived ? 0 : THREE.MathUtils.clamp(curl * 15 * params.tourBank, -0.5, 0.5)
+    tour.bank = THREE.MathUtils.damp(tour.bank, bankTarget, 2.5, dt)
+    _tq.multiply(_tqr.setFromAxisAngle(Z_AXIS, tour.bank))
+
+    // gimbal: rotation chases the desired orientation with a max slew rate,
+    // so it can never jump — 80°/s hard ceiling
+    const angle = camera.quaternion.angleTo(_tq)
+    if (angle > 1e-5) {
+      const f = Math.min(1 - Math.exp(-3.2 * dt), (1.4 * dt) / angle)
+      camera.quaternion.slerp(_tq, f)
+    }
+
+    if (arrived && angle < 0.001 && Math.abs(tour.bank) < 0.001) tour.active = false
+  } else if (tween.active) {
     tween.t = Math.min(1, tween.t + dt / params.flyDuration)
     const e = EASINGS[params.flyEasing](tween.t)
     camera.position.lerpVectors(tween.p0, tween.p1, e)
