@@ -15,6 +15,7 @@ import {
   ToneMappingEffect,
   ToneMappingMode,
   Effect,
+  EffectAttribute,
   BlendFunction,
 } from 'postprocessing'
 import { Terrain } from './terrain.js'
@@ -116,6 +117,7 @@ const params = {
   fogNear: 35.5,
   fogFar: 50,
   fogColor: '#ffffff',
+  fogOpacity: 0.58,
   surveyLines: true,
 
   // motion
@@ -174,9 +176,9 @@ container.appendChild(renderer.domElement)
 
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(params.fogColor)
-// linear fog: near/far give direct control over where the fade starts and
-// where the terrain is fully swallowed, hiding the mesh edge
-scene.fog = new THREE.Fog(new THREE.Color(params.fogColor), params.fogNear, params.fogFar)
+// Fog is applied as a screen-space post effect below. Keeping scene.fog null
+// prevents camera altitude from washing the whole terrain into the background.
+scene.fog = null
 
 const camera = new THREE.PerspectiveCamera(params.fov, window.innerWidth / window.innerHeight, 0.5, 220)
 camera.position.set(0, 18, 19)
@@ -546,7 +548,52 @@ class ExposureEffect extends Effect {
   }
 }
 
+class ScreenSpaceFogEffect extends Effect {
+  constructor({ color, near, far, opacity, cameraNear, cameraFar }) {
+    super(
+      'ScreenSpaceFogEffect',
+      `
+uniform vec3 fogColor;
+uniform float fogNear;
+uniform float fogFar;
+uniform float fogOpacity;
+uniform float cameraNear;
+uniform float cameraFar;
+
+float linearViewDistance(float depth) {
+  float viewZ = (cameraNear * cameraFar) / ((cameraFar - cameraNear) * depth - cameraFar);
+  return max(0.0, -viewZ);
+}
+
+void mainImage(const in vec4 inputColor, const in vec2 uv, const in float depth, out vec4 outputColor) {
+  float distanceToSurface = linearViewDistance(depth);
+  float factor = smoothstep(fogNear, fogFar, distanceToSurface) * fogOpacity;
+  outputColor = vec4(mix(inputColor.rgb, fogColor, clamp(factor, 0.0, 1.0)), inputColor.a);
+}`,
+      {
+        attributes: EffectAttribute.DEPTH,
+        uniforms: new Map([
+          ['fogColor', new THREE.Uniform(color)],
+          ['fogNear', new THREE.Uniform(near)],
+          ['fogFar', new THREE.Uniform(far)],
+          ['fogOpacity', new THREE.Uniform(opacity)],
+          ['cameraNear', new THREE.Uniform(cameraNear)],
+          ['cameraFar', new THREE.Uniform(cameraFar)],
+        ]),
+      }
+    )
+  }
+}
+
 const exposureFx = new ExposureEffect(params.exposure)
+const screenFog = new ScreenSpaceFogEffect({
+  color: new THREE.Color(params.fogColor),
+  near: params.fogNear,
+  far: params.fogFar,
+  opacity: params.fogOpacity,
+  cameraNear: camera.near,
+  cameraFar: camera.far,
+})
 const toneMap = new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC })
 const contrastFx = new BrightnessContrastEffect({ brightness: 0, contrast: params.contrast })
 const hueSat = new HueSaturationEffect({ saturation: params.saturation })
@@ -557,6 +604,7 @@ const smaa = new SMAAEffect()
 
 const dofPass = new EffectPass(camera, dof)
 composer.addPass(dofPass)
+composer.addPass(new EffectPass(camera, screenFog))
 composer.addPass(new EffectPass(camera, exposureFx, toneMap, hueSat, contrastFx, grain, vignette, smaa))
 // skip the whole DOF pass when bokeh is zero — it's pure cost with no visual effect
 dofPass.enabled = params.bokehScale > 0
