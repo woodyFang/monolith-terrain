@@ -109,6 +109,10 @@ export class TerrainEditor {
     this.seedInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') this.generateFromSeed(this.seedInput.value)
     })
+    this.root.querySelector('.editor-help').insertAdjacentHTML(
+      'beforeend',
+      '<span>右键旋转</span><span>中键平移</span><span>滚轮缩放</span>'
+    )
 
     const modes = this.root.querySelector('.editor-modes')
     this.modeButtons = {
@@ -164,8 +168,10 @@ export class TerrainEditor {
     this.onPointerMove = (event) => this.handlePointerMove(event)
     this.onPointerUp = () => this.handlePointerUp()
     this.onKeyDown = (event) => this.handleKeyDown(event)
+    this.onContextMenu = (event) => event.preventDefault()
     this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown)
     this.renderer.domElement.addEventListener('pointermove', this.onPointerMove)
+    this.renderer.domElement.addEventListener('contextmenu', this.onContextMenu)
     window.addEventListener('pointerup', this.onPointerUp)
     window.addEventListener('keydown', this.onKeyDown)
   }
@@ -219,11 +225,18 @@ export class TerrainEditor {
     this.cancelDraft()
     this.mode = mode
     const editing = mode === 'edit'
-    this.controls.enabled = !editing
+    this.configureCameraControls(editing)
     this.editorGroup.visible = mode !== 'explore'
     this.overlay.setVisible(mode === 'edit' || mode === 'masks')
     if (mode === 'masks') this.setTool('select')
     this.refreshUI()
+  }
+
+  configureCameraControls(editing) {
+    this.controls.enabled = true
+    this.controls.mouseButtons.LEFT = editing ? null : THREE.MOUSE.ROTATE
+    this.controls.mouseButtons.RIGHT = editing ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN
+    this.controls.mouseButtons.MIDDLE = editing ? THREE.MOUSE.PAN : THREE.MOUSE.DOLLY
   }
 
   setTool(tool) {
@@ -638,6 +651,7 @@ export class TerrainEditor {
   dispose() {
     this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDown)
     this.renderer.domElement.removeEventListener('pointermove', this.onPointerMove)
+    this.renderer.domElement.removeEventListener('contextmenu', this.onContextMenu)
     window.removeEventListener('pointerup', this.onPointerUp)
     window.removeEventListener('keydown', this.onKeyDown)
     clearGroup(this.editorGroup)
