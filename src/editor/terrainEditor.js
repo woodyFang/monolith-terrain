@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { EditableTerrainData, MASK_LAYERS, pointInPolygon } from './editableTerrainData.js'
 import { MaskOverlay, MASK_COLORS } from './maskOverlay.js'
+import { generateSeededLayout } from './seededTerrainGenerator.js'
 
 const TOOL_LABELS = {
   select: '选择',
@@ -65,6 +66,7 @@ export class TerrainEditor {
     this.createUI()
     this.bindEvents()
     this.setBaseSampler(this.terrain.sample)
+    this.generateFromSeed(this.params.seed)
   }
 
   createUI() {
@@ -78,6 +80,11 @@ export class TerrainEditor {
           <div class="editor-subtitle">城市 / 野外生成工作台</div>
         </div>
         <div class="editor-live"><span></span>实时</div>
+      </div>
+      <div class="editor-seedbar">
+        <label for="terrain-seed-input">\u79cd\u5b50</label>
+        <input id="terrain-seed-input" type="number" min="0" step="1" value="${this.params.seed ?? 7}" />
+        <button class="editor-generate" type="button">\u6309\u79cd\u5b50\u751f\u6210</button>
       </div>
       <div class="editor-section">
         <div class="editor-section-title"><b>01</b><span>工作模式</span></div>
@@ -95,6 +102,13 @@ export class TerrainEditor {
       <div class="editor-help"><b>操作提示</b><span>点击放置点</span><span>Enter 完成</span><span>Esc 取消</span><span>Delete 删除</span></div>
     `
     document.body.appendChild(this.root)
+
+    this.seedInput = this.root.querySelector('#terrain-seed-input')
+    this.generateButton = this.root.querySelector('.editor-generate')
+    this.generateButton.addEventListener('click', () => this.generateFromSeed(this.seedInput.value))
+    this.seedInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') this.generateFromSeed(this.seedInput.value)
+    })
 
     const modes = this.root.querySelector('.editor-modes')
     this.modeButtons = {
@@ -167,6 +181,27 @@ export class TerrainEditor {
 
   syncTerrainSurface() {
     this.terrain.applyHeightField?.((x, z) => this.data.sampleHeight(x, z))
+  }
+
+  generateFromSeed(seed = this.params.seed) {
+    const parsedSeed = Number.isFinite(Number(seed)) ? Math.max(0, Math.floor(Number(seed))) >>> 0 : 0
+    const layout = generateSeededLayout(parsedSeed, this.data.worldSize)
+    this.params.seed = parsedSeed
+    if (this.seedInput) this.seedInput.value = String(parsedSeed)
+    this.cancelDraft()
+    this.selectedId = null
+    this.data.regions = []
+    this.data.splines = []
+    this.data._nextId = 1
+    for (const spline of layout.splines) this.data.addSpline(spline)
+    for (const region of layout.regions) this.data.addRegion(region)
+    this.data.rebuild()
+    this.syncTerrainSurface()
+    this.overlay.update()
+    this.setMode('edit')
+    this.refreshVisuals()
+    this.rebuildPcgPreview()
+    this.setStatus(`\u79cd\u5b50 ${layout.seed} / \u5df2\u751f\u6210 ${layout.splines.length} \u6761\u8def\u5f84 / ${layout.regions.length} \u4e2a\u533a\u57df`)
   }
 
   layerName(layer) {
@@ -274,6 +309,7 @@ export class TerrainEditor {
   }
 
   handleKeyDown(event) {
+    if (event.target === this.seedInput) return
     if (event.key === 'Escape') {
       this.cancelDraft()
       return

@@ -316,6 +316,42 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-bottom: 0;
 }
+.editor-seedbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 7px 12px;
+  background: #162a34;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-bottom: 0;
+}
+.editor-seedbar label {
+  color: #ffb52e;
+  font-size: 11px;
+  font-weight: 700;
+}
+.editor-seedbar input {
+  width: 88px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 4px;
+  background: #07151b;
+  color: #ffffff;
+  font: 700 12px/1 'SF Mono', 'Fira Code', ui-monospace, monospace;
+}
+.editor-generate {
+  flex: 1;
+  height: 32px;
+  border: 1px solid #ff9b70;
+  border-radius: 4px;
+  background: #ff5b1a;
+  color: #ffffff;
+  font: 700 11px/1 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  cursor: pointer;
+}
+.editor-generate:hover { background: #ff7a3f; }
 .editor-kicker {
   color: #ff7338;
   font-size: 10px;

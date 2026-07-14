@@ -1,6 +1,18 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { EditableTerrainData } from '../src/editor/editableTerrainData.js'
+import { generateSeededLayout } from '../src/editor/seededTerrainGenerator.js'
+
+test('generates a repeatable editable layout from a seed', () => {
+  const first = generateSeededLayout(42)
+  const second = generateSeededLayout(42)
+  const other = generateSeededLayout(43)
+  assert.deepEqual(first, second)
+  assert.notDeepEqual(first, other)
+  assert.ok(first.splines.length >= 5)
+  assert.ok(first.regions.length >= 3)
+  assert.equal(first.splines[0].heightMode, 'flatten')
+})
 
 test('initializes and samples a base heightfield', () => {
   const data = new EditableTerrainData({ worldSize: 10, resolution: 16 })
