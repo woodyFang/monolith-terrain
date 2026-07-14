@@ -71,11 +71,28 @@ export class TerrainEditor {
     this.root = document.createElement('section')
     this.root.className = 'editor-ui'
     this.root.innerHTML = `
-      <div class="editor-toolbar-row editor-modes"></div>
-      <div class="editor-toolbar-row editor-tools"></div>
-      <div class="editor-toolbar-row editor-options"></div>
-      <div class="editor-status">编辑器 / 浏览 / 地形预览</div>
-      <div class="editor-help">编辑模式：点击放置点 · Enter 完成 · Esc 取消 · Delete 删除</div>
+      <div class="editor-header">
+        <div>
+          <div class="editor-kicker"><span class="editor-dot"></span>PCG TERRAIN EDITOR</div>
+          <div class="editor-title">可编辑地形</div>
+          <div class="editor-subtitle">城市 / 野外生成工作台</div>
+        </div>
+        <div class="editor-live"><span></span>实时</div>
+      </div>
+      <div class="editor-section">
+        <div class="editor-section-title"><b>01</b><span>工作模式</span></div>
+        <div class="editor-toolbar-row editor-modes"></div>
+      </div>
+      <div class="editor-section editor-tools-section">
+        <div class="editor-section-title"><b>02</b><span>编辑工具</span><em>数字键 1 / 2 / 3</em></div>
+        <div class="editor-toolbar-row editor-tools"></div>
+      </div>
+      <div class="editor-section">
+        <div class="editor-section-title"><b>03</b><span>Mask 图层</span><em>M 切换</em></div>
+        <div class="editor-toolbar-row editor-options"></div>
+      </div>
+      <div class="editor-status"><span class="editor-status-mark"></span><span class="editor-status-text">编辑器 / 浏览 / 地形预览</span></div>
+      <div class="editor-help"><b>操作提示</b><span>点击放置点</span><span>Enter 完成</span><span>Esc 取消</span><span>Delete 删除</span></div>
     `
     document.body.appendChild(this.root)
 
@@ -444,7 +461,7 @@ export class TerrainEditor {
   }
 
   setStatus(message) {
-    if (this.root) this.root.querySelector('.editor-status').textContent = `编辑器 / ${message}`
+    if (this.root) this.root.querySelector('.editor-status-text').textContent = `编辑器 / ${message}`
   }
 
   refreshUI() {
@@ -455,9 +472,9 @@ export class TerrainEditor {
       element.disabled = this.mode !== 'edit'
     })
     this.layerSelect.value = this.activeLayer
-    this.root.querySelector('.editor-tools').style.display = this.mode === 'edit' ? 'flex' : 'none'
-    this.root.querySelector('.editor-options').style.display = this.mode === 'explore' ? 'none' : 'flex'
-    this.root.querySelector('.editor-help').style.display = this.mode === 'edit' ? 'block' : 'none'
+    this.root.querySelector('.editor-tools').style.display = 'flex'
+    this.root.querySelector('.editor-options').style.display = 'flex'
+    this.root.querySelector('.editor-help').style.display = this.mode === 'edit' ? 'flex' : 'none'
     this.renderer.domElement.style.cursor = this.mode === 'edit' ? (this.tool === 'select' ? 'default' : 'crosshair') : 'grab'
     if (this.mode === 'explore') this.setStatus('浏览 / 地形预览')
     else if (this.mode === 'masks') this.setStatus(`图层 / ${this.layerName(this.activeLayer)}`)

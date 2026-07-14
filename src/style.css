@@ -62,11 +62,11 @@ body {
 
 /* ------------------------------------------------------------- HUD (FUI) */
 :root {
-  --hud-ink: #17191b;
+  --hud-ink: #f4f7f8;
   --hud-accent: #ff4d00;
-  --hud-blur: 7px;
-  --hud-bg-alpha: 0.55;
-  --hud-paper: rgb(248 247 244 / var(--hud-bg-alpha));
+  --hud-blur: 12px;
+  --hud-bg-alpha: 0.86;
+  --hud-paper: rgb(10 17 23 / var(--hud-bg-alpha));
 }
 
 .hud {
@@ -84,7 +84,7 @@ body {
   width: 26px;
   height: 26px;
   border: 1px solid var(--hud-ink);
-  opacity: 0.55;
+  opacity: 0.8;
 }
 .hud-corner.tl { top: 14px; left: 14px; border-right: 0; border-bottom: 0; }
 .hud-corner.tr { top: 14px; right: 14px; border-left: 0; border-bottom: 0; }
@@ -93,12 +93,12 @@ body {
 
 .hud-block {
   position: absolute;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.14em;
   line-height: 1.75;
   text-transform: uppercase;
   background: var(--hud-paper);
-  border: 1px solid rgba(20, 22, 24, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   backdrop-filter: blur(var(--hud-blur));
   padding: 10px 14px;
   min-width: 190px;
@@ -123,14 +123,14 @@ body {
 }
 .hud-dim { opacity: 0.6; }
 .hud-strong { font-weight: 700; letter-spacing: 0.22em; }
-.hud-rule { height: 1px; background: var(--hud-ink); opacity: 0.35; margin: 6px 0; }
+.hud-rule { height: 1px; background: var(--hud-ink); opacity: 0.24; margin: 6px 0; }
 
 .hud-row {
   display: flex;
   justify-content: space-between;
   gap: 18px;
 }
-.hud-row span { opacity: 0.55; }
+.hud-row span { opacity: 0.68; }
 .hud-row b { font-weight: 600; }
 .hud-row .accent { color: var(--hud-accent); }
 
@@ -172,7 +172,7 @@ body {
   border-left: 2px solid var(--hud-accent);
   backdrop-filter: blur(var(--hud-blur));
 }
-.hud-ret-label:hover { background: rgba(255, 255, 255, 0.8); }
+.hud-ret-label:hover { background: rgba(25, 35, 42, 0.96); }
 .hud-ret-name { font-weight: 700; }
 .hud-ret-name i { color: var(--hud-accent); font-style: normal; }
 .hud-ret-sub { opacity: 0.6; font-size: 9px; }
@@ -199,7 +199,7 @@ body {
   white-space: nowrap;
   padding: 3px 7px;
   background: var(--hud-paper);
-  border: 1px solid rgba(20, 22, 24, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.28);
   backdrop-filter: blur(var(--hud-blur));
 }
 .hud-poi .tag b { font-weight: 700; }
@@ -218,7 +218,7 @@ body {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   background: var(--hud-paper);
-  border: 1px solid rgba(20, 22, 24, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.28);
   backdrop-filter: blur(var(--hud-blur));
   padding: 10px 14px;
   pointer-events: auto;
@@ -242,100 +242,221 @@ body {
 }
 .hud-x:hover { opacity: 1; color: var(--hud-accent); }
 
-/* lil-gui tweaks — frosted monochrome to match the scene */
+/* lil-gui — high-contrast parameter inspector */
 .lil-gui {
-  --background-color: rgba(18, 18, 18, 0.78);
-  --widget-color: rgba(255, 255, 255, 0.08);
-  --hover-color: rgba(255, 255, 255, 0.14);
-  --focus-color: rgba(255, 255, 255, 0.2);
-  --number-color: #d8d8d8;
-  --text-color: #cfcfcf;
-  --title-background-color: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(10px);
+  --background-color: rgba(8, 15, 21, 0.96);
+  --widget-color: rgba(255, 255, 255, 0.1);
+  --hover-color: rgba(255, 255, 255, 0.17);
+  --focus-color: rgba(255, 92, 25, 0.45);
+  --number-color: #ffffff;
+  --string-color: #ffffff;
+  --text-color: #f4f7f8;
+  --title-background-color: rgba(255, 255, 255, 0.08);
+  width: 310px;
+  max-height: calc(100vh - 28px);
+  overflow: auto;
+  border-left: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: -16px 0 40px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(16px);
   font-family: 'SF Mono', ui-monospace, monospace !important;
+}
+.lil-gui .title {
+  height: 36px;
+  line-height: 36px;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.lil-gui .controller {
+  min-height: 30px;
+  color: #f4f7f8;
+}
+.lil-gui .controller .name {
+  color: rgba(244, 247, 248, 0.78);
+}
+.lil-gui input,
+.lil-gui select {
+  color: #ffffff !important;
 }
 
 /* ------------------------------------------------------------- editor tools */
 .editor-ui {
   position: fixed;
-  top: 16px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 176px;
+  left: 28px;
   z-index: 20;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  min-width: 560px;
-  color: #e8e8e8;
-  font: 10px/1.2 'SF Mono', 'Fira Code', ui-monospace, monospace;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  gap: 0;
+  width: 348px;
+  color: #eef3f5;
+  font: 12px/1.35 'SF Mono', 'Fira Code', ui-monospace, monospace;
   user-select: none;
+  filter: drop-shadow(0 16px 24px rgba(0, 0, 0, 0.26));
+}
+.editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 18px 18px 16px;
+  background: linear-gradient(135deg, rgba(8, 17, 24, 0.98), rgba(18, 29, 37, 0.95));
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-bottom: 0;
+}
+.editor-kicker {
+  color: #ff7338;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+.editor-dot,
+.editor-live span,
+.editor-status-mark {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 7px;
+  background: #ff5b1a;
+  box-shadow: 0 0 10px rgba(255, 91, 26, 0.75);
+}
+.editor-title {
+  margin-top: 8px;
+  color: #ffffff;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.editor-subtitle {
+  margin-top: 4px;
+  color: rgba(238, 243, 245, 0.58);
+  font-size: 11px;
+}
+.editor-live {
+  color: #9de7b1;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+.editor-live span {
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  background: #55d57b;
+  box-shadow: 0 0 8px rgba(85, 213, 123, 0.75);
+}
+.editor-section {
+  padding: 13px 14px 14px;
+  background: rgba(9, 18, 25, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-bottom: 0;
+}
+.editor-section-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 9px;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.editor-section-title b {
+  color: #ff7338;
+  font-size: 10px;
+}
+.editor-section-title em {
+  margin-left: auto;
+  color: rgba(238, 243, 245, 0.42);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 400;
+  letter-spacing: 0.04em;
 }
 .editor-toolbar-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 5px;
-  background: rgba(18, 18, 18, 0.76);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(10px);
+  gap: 6px;
 }
 .editor-toolbar-row button,
 .editor-toolbar-row select {
   appearance: none;
-  min-height: 26px;
-  padding: 0 9px;
+  min-height: 34px;
+  padding: 0 11px;
   border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #e8e8e8;
-  font: inherit;
-  letter-spacing: 0.1em;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #f4f7f8;
+  font: 600 11px/1 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  letter-spacing: 0.04em;
   cursor: pointer;
+  transition: 0.16s ease;
 }
 .editor-toolbar-row button:hover,
 .editor-toolbar-row select:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.42);
 }
 .editor-toolbar-row button.active {
-  border-color: var(--hud-accent);
+  background: #ff5b1a;
+  border-color: #ff9b70;
   color: #fff;
-  box-shadow: inset 2px 0 0 var(--hud-accent);
+  box-shadow: 0 0 16px rgba(255, 91, 26, 0.28);
 }
 .editor-toolbar-row button:disabled {
   cursor: default;
   opacity: 0.38;
 }
 .editor-toolbar-row select {
-  min-width: 160px;
+  flex: 1 1 auto;
+  min-width: 0;
+  background: #172630;
 }
 .editor-status {
-  align-self: center;
-  padding: 4px 8px;
-  color: #f2f2f2;
-  background: rgba(18, 18, 18, 0.58);
-  border-left: 2px solid var(--hud-accent);
+  display: flex;
+  align-items: center;
+  min-height: 39px;
+  padding: 0 14px;
+  color: #ffffff;
+  background: #13232d;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-bottom: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
+.editor-status-mark { width: 6px; height: 6px; margin-right: 8px; }
 .editor-help {
-  align-self: center;
-  padding: 3px 8px;
-  color: rgba(255, 255, 255, 0.65);
-  background: rgba(18, 18, 18, 0.45);
-  text-transform: none;
-  letter-spacing: 0.06em;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 10px 13px;
+  color: rgba(238, 243, 245, 0.68);
+  background: rgba(9, 18, 25, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+.editor-help b {
+  width: 100%;
+  margin-bottom: 2px;
+  color: #ff9d72;
+  font-size: 10px;
+}
+.editor-help span {
+  padding: 3px 5px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 @media (max-width: 760px) {
   .editor-ui {
-    top: 8px;
-    min-width: min(96vw, 560px);
-  }
-  .editor-toolbar-row {
-    flex-wrap: wrap;
+    top: 132px;
+    left: 12px;
+    width: min(calc(100vw - 24px), 348px);
   }
   .editor-toolbar-row button,
   .editor-toolbar-row select {
     flex: 1 1 auto;
+    padding: 0 8px;
   }
 }
