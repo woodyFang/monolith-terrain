@@ -90,7 +90,7 @@ const params = {
   contourColor: '#000000',
   gridStep: 5,
   gridOpacity: 1,
-  labels: true,
+  labels: false,
 
   // HUD
   hud: true,
@@ -484,6 +484,7 @@ hud2.setPois(pois)
 hud2.setStatic(params)
 hud2.setVisible(params.hud)
 hud2.setOpacity(params.hudOpacity)
+hud2.root.remove()
 document.documentElement.style.setProperty('--hud-accent', params.hudAccent)
 document.documentElement.style.setProperty('--hud-ink', params.hudInk)
 document.documentElement.style.setProperty('--hud-blur', `${params.uiBlur}px`)
@@ -917,6 +918,10 @@ fHud.close()
 fMotion.close()
 fPerf.close()
 fLight.close()
+
+// The original inspector is intentionally removed from the first terrain-editor workflow.
+// Terrain editing stays focused on the dedicated editor workbench.
+gui.domElement.remove()
 
 // ------------------------------------------------------------------ loop
 

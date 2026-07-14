@@ -255,6 +255,10 @@ body {
   backdrop-filter: blur(16px);
   font-family: 'SF Mono', ui-monospace, monospace !important;
 }
+.overlay,
+.hud {
+  display: none !important;
+}
 .lil-gui.root {
   width: 310px !important;
   height: calc(100vh - 32px) !important;
@@ -291,8 +295,8 @@ body {
 .editor-ui {
   position: fixed;
   top: 16px;
-  right: 24px;
-  left: auto;
+  left: 24px;
+  right: auto;
   z-index: 20;
   display: flex;
   flex-direction: column;
