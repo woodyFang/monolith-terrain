@@ -338,14 +338,21 @@ export class TerrainEditor {
     this.handleMeshes = []
     const addObjectVisual = (item, closed, color) => {
       const selected = item.id === this.selectedId
-      const routeColor = selected ? '#e8973f' : item.type === 'road' ? '#59d68f' : color
+      const routeColor = selected ? '#ffb52e' : item.type === 'road' ? '#2cf0a1' : color
       const points = item.points.map(([x, z]) => new THREE.Vector3(x, this.data.sampleHeight(x, z) + 0.28, z))
 
       if (item.type === 'road' && item.points.length >= 2) {
+        const outerBandMaterial = new THREE.MeshBasicMaterial({
+          color: '#06151b',
+          transparent: true,
+          opacity: 0.96,
+          depthTest: false,
+          depthWrite: false,
+        })
         const bandMaterial = new THREE.MeshBasicMaterial({
           color: routeColor,
           transparent: true,
-          opacity: selected ? 0.34 : 0.2,
+          opacity: selected ? 0.86 : 0.7,
           depthTest: false,
           depthWrite: false,
         })
@@ -355,16 +362,29 @@ export class TerrainEditor {
           const dx = bx - ax
           const dz = bz - az
           const length = Math.max(0.01, Math.hypot(dx, dz))
-          const mesh = new THREE.Mesh(new THREE.BoxGeometry(length, 0.08, item.width || 4), bandMaterial)
-          mesh.position.set(
+          const position = [
             (ax + bx) / 2,
             this.data.sampleHeight((ax + bx) / 2, (az + bz) / 2) + 0.2,
-            (az + bz) / 2
-          )
-          mesh.rotation.y = -Math.atan2(dz, dx)
-          mesh.renderOrder = 7
-          this.editorGroup.add(mesh)
+            (az + bz) / 2,
+          ]
+          const angle = -Math.atan2(dz, dx)
+          const outer = new THREE.Mesh(new THREE.BoxGeometry(length, 0.14, (item.width || 4) + 0.8), outerBandMaterial)
+          outer.position.set(...position)
+          outer.rotation.y = angle
+          outer.renderOrder = 30
+          this.editorGroup.add(outer)
+          const inner = new THREE.Mesh(new THREE.BoxGeometry(length, 0.16, item.width || 4), bandMaterial)
+          inner.position.set(position[0], position[1] + 0.06, position[2])
+          inner.rotation.y = angle
+          inner.renderOrder = 31
+          this.editorGroup.add(inner)
         }
+        const centerline = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(item.points.map(([x, z]) => new THREE.Vector3(x, this.data.sampleHeight(x, z) + 0.42, z))),
+          new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: selected ? 1 : 0.9, depthTest: false })
+        )
+        centerline.renderOrder = 33
+        this.editorGroup.add(centerline)
       } else if (closed && item.points.length >= 3) {
         const shape = new THREE.Shape()
         item.points.forEach(([x, z], index) => {
@@ -377,7 +397,7 @@ export class TerrainEditor {
           new THREE.MeshBasicMaterial({
             color,
             transparent: true,
-            opacity: selected ? 0.22 : 0.12,
+            opacity: selected ? 0.42 : 0.28,
             depthTest: false,
             depthWrite: false,
             side: THREE.DoubleSide,
@@ -386,35 +406,54 @@ export class TerrainEditor {
         const averageHeight = item.points.reduce((sum, [x, z]) => sum + this.data.sampleHeight(x, z), 0) / item.points.length
         fill.rotation.x = -Math.PI / 2
         fill.position.y = averageHeight + 0.12
-        fill.renderOrder = 5
+        fill.renderOrder = 25
         this.editorGroup.add(fill)
       }
 
       if (closed) points.push(points[0].clone())
+      const outline = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(points),
+        new THREE.LineBasicMaterial({ color: '#07151b', transparent: true, opacity: 0.98, depthTest: false })
+      )
+      outline.renderOrder = 34
+      this.editorGroup.add(outline)
       const line = new THREE.Line(
         new THREE.BufferGeometry().setFromPoints(points),
-        new THREE.LineBasicMaterial({ color: routeColor, transparent: true, opacity: selected ? 1 : 0.88, depthTest: false })
+        new THREE.LineBasicMaterial({ color: routeColor, transparent: true, opacity: selected ? 1 : 0.98, depthTest: false })
       )
-      line.renderOrder = 8
+      line.renderOrder = 35
       this.editorGroup.add(line)
 
       if (item.type === 'road' && item.points.length >= 2) {
-        const endpointMaterial = new THREE.MeshBasicMaterial({ color: routeColor, transparent: true, opacity: 0.9, depthTest: false })
+        const endpointOuterMaterial = new THREE.MeshBasicMaterial({ color: '#06151b', depthTest: false })
+        const endpointMaterial = new THREE.MeshBasicMaterial({ color: '#ffffff', depthTest: false })
         for (const [x, z] of [item.points[0], item.points[item.points.length - 1]]) {
-          const endpoint = new THREE.Mesh(new THREE.SphereGeometry(Math.max(0.28, (item.width || 4) * 0.12), 12, 8), endpointMaterial)
-          endpoint.position.set(x, this.data.sampleHeight(x, z) + 0.3, z)
-          endpoint.renderOrder = 9
+          const y = this.data.sampleHeight(x, z) + 0.44
+          const outer = new THREE.Mesh(new THREE.SphereGeometry(Math.max(0.46, (item.width || 4) * 0.16), 16, 10), endpointOuterMaterial)
+          outer.position.set(x, y, z)
+          outer.renderOrder = 36
+          this.editorGroup.add(outer)
+          const endpoint = new THREE.Mesh(new THREE.SphereGeometry(Math.max(0.28, (item.width || 4) * 0.1), 16, 10), endpointMaterial)
+          endpoint.position.set(x, y + 0.04, z)
+          endpoint.renderOrder = 37
           this.editorGroup.add(endpoint)
         }
       }
       for (let i = 0; i < item.points.length; i++) {
         const [x, z] = item.points[i]
-        const handle = new THREE.Mesh(
-          new THREE.SphereGeometry(selected ? 0.3 : 0.23, 12, 8),
-          new THREE.MeshBasicMaterial({ color: selected ? '#ffd36a' : '#f1f5f6', depthTest: false })
+        const halo = new THREE.Mesh(
+          new THREE.SphereGeometry(selected ? 0.52 : 0.4, 16, 10),
+          new THREE.MeshBasicMaterial({ color: '#06151b', depthTest: false })
         )
-        handle.position.set(x, this.data.sampleHeight(x, z) + 0.35, z)
-        handle.renderOrder = 10
+        halo.position.set(x, this.data.sampleHeight(x, z) + 0.36, z)
+        halo.renderOrder = 38
+        this.editorGroup.add(halo)
+        const handle = new THREE.Mesh(
+          new THREE.SphereGeometry(selected ? 0.34 : 0.27, 16, 10),
+          new THREE.MeshBasicMaterial({ color: selected ? '#ffd36a' : '#ffffff', depthTest: false })
+        )
+        handle.position.set(x, this.data.sampleHeight(x, z) + 0.43, z)
+        handle.renderOrder = 39
         handle.userData = { objectId: item.id, pointIndex: i }
         this.editorGroup.add(handle)
         this.handleMeshes.push(handle)
@@ -426,15 +465,22 @@ export class TerrainEditor {
 
     if (this.draftPoints.length) {
       const draft = this.draftPoints.map(([x, z]) => new THREE.Vector3(x, this.data.sampleHeight(x, z) + 0.3, z))
+      const draftUnderlay = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(draft),
+        new THREE.LineBasicMaterial({ color: '#06151b', linewidth: 3, depthTest: false })
+      )
+      draftUnderlay.renderOrder = 40
+      this.editorGroup.add(draftUnderlay)
       this.editorGroup.add(
         new THREE.Line(
           new THREE.BufferGeometry().setFromPoints(draft),
-          new THREE.LineBasicMaterial({ color: this.tool === 'area' ? MASK_COLORS.buildable : MASK_COLORS.road })
+          new THREE.LineBasicMaterial({ color: this.tool === 'area' ? '#ff4fc3' : '#2cf0a1', depthTest: false })
         )
       )
       draft.forEach((point) => {
-        const handle = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), new THREE.MeshBasicMaterial({ color: '#ffffff' }))
+        const handle = new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 8), new THREE.MeshBasicMaterial({ color: '#ffffff', depthTest: false }))
         handle.position.copy(point)
+        handle.renderOrder = 41
         this.editorGroup.add(handle)
       })
     }
