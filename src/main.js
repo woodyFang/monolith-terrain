@@ -23,6 +23,7 @@ import { createLabels, disposeLabels } from './labels.js'
 import { createHud3D, findPois } from './hud3d.js'
 import { createHud2D } from './hud2d.js'
 import { loadDem } from './dem.js'
+import { TerrainEditor } from './editor/terrainEditor.js'
 
 // ------------------------------------------------------------------ params
 
@@ -236,6 +237,15 @@ function applyShadowMode() {
 
 const terrain = new Terrain(params)
 scene.add(terrain.mesh)
+
+const editor = new TerrainEditor({
+  scene,
+  camera,
+  renderer,
+  controls,
+  terrain,
+  params,
+})
 
 const cone = createCone()
 scene.add(cone.group)
@@ -605,6 +615,7 @@ function regenerateTerrain() {
     setTimeout(() => {
       terrain.rebuild(params)
       terrain.rebuildRoughness(params)
+      editor.setBaseSampler(terrain.sample)
       regenerateLabels()
       regenerateHud()
       if (params.shadowMode === 'static') renderer.shadowMap.needsUpdate = true
@@ -910,7 +921,7 @@ fLight.close()
 // ------------------------------------------------------------------ loop
 
 // console access for debugging/scripting
-window.__exp = { scene, camera, controls, params, terrain, loadRealTerrain, get labels() { return labels } }
+window.__exp = { scene, camera, controls, params, terrain, editor, loadRealTerrain, get labels() { return labels } }
 
 // real world is the default source — fetch its tiles on startup
 if (params.source === 'real') loadRealTerrain()

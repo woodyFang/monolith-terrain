@@ -254,3 +254,88 @@ body {
   backdrop-filter: blur(10px);
   font-family: 'SF Mono', ui-monospace, monospace !important;
 }
+
+/* ------------------------------------------------------------- editor tools */
+.editor-ui {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 560px;
+  color: #e8e8e8;
+  font: 10px/1.2 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  user-select: none;
+}
+.editor-toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px;
+  background: rgba(18, 18, 18, 0.76);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(10px);
+}
+.editor-toolbar-row button,
+.editor-toolbar-row select {
+  appearance: none;
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8e8e8;
+  font: inherit;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+}
+.editor-toolbar-row button:hover,
+.editor-toolbar-row select:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+.editor-toolbar-row button.active {
+  border-color: var(--hud-accent);
+  color: #fff;
+  box-shadow: inset 2px 0 0 var(--hud-accent);
+}
+.editor-toolbar-row button:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+.editor-toolbar-row select {
+  min-width: 160px;
+}
+.editor-status {
+  align-self: center;
+  padding: 4px 8px;
+  color: #f2f2f2;
+  background: rgba(18, 18, 18, 0.58);
+  border-left: 2px solid var(--hud-accent);
+}
+.editor-help {
+  align-self: center;
+  padding: 3px 8px;
+  color: rgba(255, 255, 255, 0.65);
+  background: rgba(18, 18, 18, 0.45);
+  text-transform: none;
+  letter-spacing: 0.06em;
+}
+@media (max-width: 760px) {
+  .editor-ui {
+    top: 8px;
+    min-width: min(96vw, 560px);
+  }
+  .editor-toolbar-row {
+    flex-wrap: wrap;
+  }
+  .editor-toolbar-row button,
+  .editor-toolbar-row select {
+    flex: 1 1 auto;
+  }
+}
