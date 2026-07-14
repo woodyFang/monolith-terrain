@@ -25,6 +25,19 @@ test('writes road and buildable masks from editable objects', () => {
   assert.equal(data.regions.length, 1)
 })
 
+test('applies flattening edits to the final heightfield', () => {
+  const data = new EditableTerrainData({ worldSize: 10, resolution: 32 })
+  data.setBaseSampler((x, z) => x + z)
+  data.addSpline({ points: [[-4, 0], [4, 0]], width: 2, falloff: 0.5 })
+  data.addRegion({
+    type: 'buildable',
+    points: [[-2, -2], [2, -2], [2, 2], [-2, 2]],
+    affectedMasks: ['buildable'],
+  })
+  assert.ok(Math.abs(data.sampleHeight(1, 1)) < 0.2)
+  assert.ok(Math.abs(data.sampleHeight(0, 1)) < 0.2)
+})
+
 test('serializes editable objects without losing their geometry', () => {
   const data = new EditableTerrainData({ worldSize: 20, resolution: 8 })
   data.setBaseSampler(() => 1)

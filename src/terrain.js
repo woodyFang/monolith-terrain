@@ -304,6 +304,29 @@ if (uScanT >= 0.0) {
     this.mesh.geometry = geo
   }
 
+  applyHeightField(sample) {
+    if (!sample || !this.mesh?.geometry) return
+    const geo = this.mesh.geometry
+    const position = geo.attributes.position
+    const array = position.array
+    let minH = Infinity
+    let maxH = -Infinity
+    for (let i = 0; i < position.count; i++) {
+      const x = array[i * 3]
+      const z = array[i * 3 + 2]
+      const h = sample(x, z)
+      array[i * 3 + 1] = h
+      minH = Math.min(minH, h)
+      maxH = Math.max(maxH, h)
+    }
+    position.needsUpdate = true
+    geo.computeVertexNormals()
+    geo.computeBoundingBox()
+    geo.computeBoundingSphere()
+    this.mapUniforms.uHeightRange.value.set(minH, maxH)
+    this.sample = sample
+  }
+
   // Bake the 4-stop elevation gradient into a 1D ramp texture the shader samples.
   rebuildRamp(params) {
     const c = document.createElement('canvas')

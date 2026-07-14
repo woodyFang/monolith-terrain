@@ -159,9 +159,14 @@ export class TerrainEditor {
   setBaseSampler(sampler) {
     if (!sampler) return
     this.data.setBaseSampler(sampler)
+    this.syncTerrainSurface()
     this.overlay.update()
     this.refreshVisuals()
     this.rebuildPcgPreview()
+  }
+
+  syncTerrainSurface() {
+    this.terrain.applyHeightField?.((x, z) => this.data.sampleHeight(x, z))
   }
 
   layerName(layer) {
@@ -256,6 +261,7 @@ export class TerrainEditor {
     target.points[this.dragging.pointIndex][0] = point.x
     target.points[this.dragging.pointIndex][1] = point.z
     this.data.rebuild()
+    this.syncTerrainSurface()
     this.refreshVisuals()
     this.overlay.update()
     this.rebuildPcgPreview()
@@ -486,6 +492,7 @@ export class TerrainEditor {
 
   onDataChange() {
     this.data.rebuild()
+    this.syncTerrainSurface()
     this.overlay.update()
     this.refreshVisuals()
     this.rebuildPcgPreview()
