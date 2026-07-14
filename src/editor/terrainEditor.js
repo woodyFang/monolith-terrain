@@ -331,20 +331,84 @@ export class TerrainEditor {
     clearGroup(this.editorGroup)
     this.handleMeshes = []
     const addObjectVisual = (item, closed, color) => {
-      const points = item.points.map(([x, z]) => new THREE.Vector3(x, this.data.sampleHeight(x, z) + 0.2, z))
+      const selected = item.id === this.selectedId
+      const routeColor = selected ? '#e8973f' : item.type === 'road' ? '#59d68f' : color
+      const points = item.points.map(([x, z]) => new THREE.Vector3(x, this.data.sampleHeight(x, z) + 0.28, z))
+
+      if (item.type === 'road' && item.points.length >= 2) {
+        const bandMaterial = new THREE.MeshBasicMaterial({
+          color: routeColor,
+          transparent: true,
+          opacity: selected ? 0.34 : 0.2,
+          depthTest: false,
+          depthWrite: false,
+        })
+        for (let i = 1; i < item.points.length; i++) {
+          const [ax, az] = item.points[i - 1]
+          const [bx, bz] = item.points[i]
+          const dx = bx - ax
+          const dz = bz - az
+          const length = Math.max(0.01, Math.hypot(dx, dz))
+          const mesh = new THREE.Mesh(new THREE.BoxGeometry(length, 0.08, item.width || 4), bandMaterial)
+          mesh.position.set(
+            (ax + bx) / 2,
+            this.data.sampleHeight((ax + bx) / 2, (az + bz) / 2) + 0.2,
+            (az + bz) / 2
+          )
+          mesh.rotation.y = -Math.atan2(dz, dx)
+          mesh.renderOrder = 7
+          this.editorGroup.add(mesh)
+        }
+      } else if (closed && item.points.length >= 3) {
+        const shape = new THREE.Shape()
+        item.points.forEach(([x, z], index) => {
+          if (index === 0) shape.moveTo(x, -z)
+          else shape.lineTo(x, -z)
+        })
+        shape.closePath()
+        const fill = new THREE.Mesh(
+          new THREE.ShapeGeometry(shape),
+          new THREE.MeshBasicMaterial({
+            color,
+            transparent: true,
+            opacity: selected ? 0.22 : 0.12,
+            depthTest: false,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+          })
+        )
+        const averageHeight = item.points.reduce((sum, [x, z]) => sum + this.data.sampleHeight(x, z), 0) / item.points.length
+        fill.rotation.x = -Math.PI / 2
+        fill.position.y = averageHeight + 0.12
+        fill.renderOrder = 5
+        this.editorGroup.add(fill)
+      }
+
       if (closed) points.push(points[0].clone())
       const line = new THREE.Line(
         new THREE.BufferGeometry().setFromPoints(points),
-        new THREE.LineBasicMaterial({ color, transparent: true, opacity: item.id === this.selectedId ? 1 : 0.8 })
+        new THREE.LineBasicMaterial({ color: routeColor, transparent: true, opacity: selected ? 1 : 0.88, depthTest: false })
       )
+      line.renderOrder = 8
       this.editorGroup.add(line)
+
+      if (item.type === 'road' && item.points.length >= 2) {
+        const endpointMaterial = new THREE.MeshBasicMaterial({ color: routeColor, transparent: true, opacity: 0.9, depthTest: false })
+        for (const [x, z] of [item.points[0], item.points[item.points.length - 1]]) {
+          const endpoint = new THREE.Mesh(new THREE.SphereGeometry(Math.max(0.28, (item.width || 4) * 0.12), 12, 8), endpointMaterial)
+          endpoint.position.set(x, this.data.sampleHeight(x, z) + 0.3, z)
+          endpoint.renderOrder = 9
+          this.editorGroup.add(endpoint)
+        }
+      }
       for (let i = 0; i < item.points.length; i++) {
         const [x, z] = item.points[i]
         const handle = new THREE.Mesh(
-          new THREE.SphereGeometry(0.22, 10, 6),
-          new THREE.MeshBasicMaterial({ color: item.id === this.selectedId ? '#ffffff' : color })
+          new THREE.SphereGeometry(selected ? 0.3 : 0.23, 12, 8),
+          new THREE.MeshBasicMaterial({ color: selected ? '#ffd36a' : '#f1f5f6', depthTest: false })
         )
         handle.position.set(x, this.data.sampleHeight(x, z) + 0.35, z)
+        handle.renderOrder = 10
         handle.userData = { objectId: item.id, pointIndex: i }
         this.editorGroup.add(handle)
         this.handleMeshes.push(handle)

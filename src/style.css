@@ -103,8 +103,8 @@ body {
   padding: 10px 14px;
   min-width: 190px;
 }
-.hud-tl { top: 34px; left: 34px; }
-.hud-brt { bottom: 78px; left: 34px; min-width: 160px; }
+.hud-tl { top: 34px; left: 338px; }
+.hud-brt { bottom: 78px; left: 338px; min-width: 160px; }
 
 .hud-kicker {
   display: flex;
@@ -252,13 +252,20 @@ body {
   --string-color: #ffffff;
   --text-color: #f4f7f8;
   --title-background-color: rgba(255, 255, 255, 0.08);
-  width: 310px;
-  max-height: calc(100vh - 28px);
+  backdrop-filter: blur(16px);
+  font-family: 'SF Mono', ui-monospace, monospace !important;
+}
+.lil-gui.root {
+  width: 310px !important;
+  height: calc(100vh - 32px) !important;
+  max-height: calc(100vh - 32px) !important;
   overflow: auto;
   border-left: 1px solid rgba(255, 255, 255, 0.18);
   box-shadow: -16px 0 40px rgba(0, 0, 0, 0.2);
-  backdrop-filter: blur(16px);
-  font-family: 'SF Mono', ui-monospace, monospace !important;
+  position: fixed !important;
+  top: 16px !important;
+  right: auto !important;
+  left: 16px !important;
 }
 .lil-gui .title {
   height: 36px;
@@ -283,8 +290,9 @@ body {
 /* ------------------------------------------------------------- editor tools */
 .editor-ui {
   position: fixed;
-  top: 176px;
-  left: 28px;
+  top: 16px;
+  right: 24px;
+  left: auto;
   z-index: 20;
   display: flex;
   flex-direction: column;
@@ -452,8 +460,12 @@ body {
   .editor-ui {
     top: 132px;
     left: 12px;
+    right: 12px;
     width: min(calc(100vw - 24px), 348px);
   }
+  .lil-gui.root { left: 12px !important; right: 12px !important; width: auto !important; height: 112px !important; max-height: 112px !important; }
+  .hud-tl { top: 144px; left: 12px; }
+  .hud-brt { bottom: 18px; left: 12px; }
   .editor-toolbar-row button,
   .editor-toolbar-row select {
     flex: 1 1 auto;
