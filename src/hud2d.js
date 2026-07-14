@@ -24,11 +24,11 @@ export function createHud2D({ onSelectPoi, onDeselect, onScan }) {
   // ---- top-left sector block
   const sector = el(
     'hud-block hud-tl',
-    `<div class="hud-kicker"><span class="sq"></span>SECTOR</div>
-     <div class="hud-dim" data-t="sectorId">SECTOR ID: —</div>
+    `<div class="hud-kicker"><span class="sq"></span>区域</div>
+     <div class="hud-dim" data-t="sectorId">区域编号：—</div>
      <div class="hud-rule"></div>
-     <div class="hud-strong">PROCEDURAL RANGE</div>
-     <div class="hud-dim" data-t="gps">GPS: —</div>
+     <div class="hud-strong">程序山地</div>
+     <div class="hud-dim" data-t="gps">坐标：—</div>
      <div class="hud-dim" data-t="meta">—</div>`
   )
   root.appendChild(sector)
@@ -36,12 +36,12 @@ export function createHud2D({ onSelectPoi, onDeselect, onScan }) {
   // ---- bottom-right telemetry block
   const telem = el(
     'hud-block hud-brt',
-    `<div class="hud-kicker"><span class="sq"></span>TELEMETRY</div>
-     <div class="hud-row"><span>CAM AZ</span><b data-t="az">—</b></div>
-     <div class="hud-row"><span>CAM EL</span><b data-t="el">—</b></div>
-     <div class="hud-row"><span>FOCUS</span><b data-t="focus">—</b></div>
-     <div class="hud-row"><span>FPS</span><b data-t="fps">—</b></div>
-     <div class="hud-row"><span>T+</span><b data-t="clock">—</b></div>`
+    `<div class="hud-kicker"><span class="sq"></span>遥测</div>
+     <div class="hud-row"><span>镜头方位</span><b data-t="az">—</b></div>
+     <div class="hud-row"><span>镜头俯仰</span><b data-t="el">—</b></div>
+     <div class="hud-row"><span>对焦</span><b data-t="focus">—</b></div>
+     <div class="hud-row"><span>帧率</span><b data-t="fps">—</b></div>
+     <div class="hud-row"><span>时间</span><b data-t="clock">—</b></div>`
   )
   root.appendChild(telem)
 
@@ -50,8 +50,8 @@ export function createHud2D({ onSelectPoi, onDeselect, onScan }) {
     'hud-reticle',
     `<span class="rb tl"></span><span class="rb tr"></span><span class="rb bl"></span><span class="rb br"></span>
      <div class="hud-ret-label">
-       <div class="hud-ret-name">MONOLITH-01 <i>▸ TRACKING</i></div>
-       <div class="hud-ret-sub"><span data-t="alt">ALT —</span> · <span data-t="spin">SPIN —</span></div>
+       <div class="hud-ret-name">MONOLITH-01 <i>▸ 跟踪中</i></div>
+       <div class="hud-ret-sub"><span data-t="alt">高度 —</span> · <span data-t="spin">旋转 —</span></div>
      </div>`
   )
   root.appendChild(reticle)
@@ -60,11 +60,11 @@ export function createHud2D({ onSelectPoi, onDeselect, onScan }) {
   // ---- selection panel (anchored below the clicked marker)
   const panel = el(
     'hud-panel',
-    `<div class="hud-panel-head"><span class="sq"></span><b data-t="pName">—</b><button class="hud-x" title="close &amp; reset view">✕</button></div>
-     <div class="hud-row"><span>CLASS</span><b data-t="pKind">—</b></div>
-     <div class="hud-row"><span>ELEV</span><b data-t="pElev">—</b></div>
-     <div class="hud-row"><span>GRID</span><b data-t="pGrid">—</b></div>
-     <div class="hud-row"><span>STATUS</span><b class="accent">LOCKED</b></div>`
+    `<div class="hud-panel-head"><span class="sq"></span><b data-t="pName">—</b><button class="hud-x" title="关闭并恢复视角">✕</button></div>
+     <div class="hud-row"><span>类型</span><b data-t="pKind">—</b></div>
+     <div class="hud-row"><span>海拔</span><b data-t="pElev">—</b></div>
+     <div class="hud-row"><span>网格</span><b data-t="pGrid">—</b></div>
+     <div class="hud-row"><span>状态</span><b class="accent">已锁定</b></div>`
   )
   panel.style.display = 'none'
   root.appendChild(panel)
@@ -80,9 +80,10 @@ export function createHud2D({ onSelectPoi, onDeselect, onScan }) {
   function setPois(pois) {
     poiEls.forEach((p) => p.remove())
     poiEls = pois.map((p, i) => {
+      const kind = p.kind === 'PEAK' ? '山峰' : p.kind === 'BASIN' ? '盆地' : p.kind
       const m = el(
         'hud-poi',
-        `<span class="tag"><b>${p.id}</b><i>${p.kind} · ${p.feet.toLocaleString()} FT</i></span>`
+        `<span class="tag"><b>${p.id}</b><i>${kind} · ${p.feet.toLocaleString()} 英尺</i></span>`
       )
       m.addEventListener('click', () => onSelectPoi?.(i))
       root.appendChild(m)
@@ -107,22 +108,22 @@ export function createHud2D({ onSelectPoi, onDeselect, onScan }) {
     setPois,
     setStatic(p) {
       const real = p.source === 'real'
-      q(sector, 'sectorId').textContent = `SECTOR ID: 465-NKJ-${String(p.seed).padStart(4, '0')}K`
-      sector.querySelector('.hud-strong').textContent = real ? p.demLocation.toUpperCase() : 'PROCEDURAL RANGE'
+      q(sector, 'sectorId').textContent = `区域编号：465-NKJ-${String(p.seed).padStart(4, '0')}K`
+      sector.querySelector('.hud-strong').textContent = real ? p.demLocation.toUpperCase() : '程序山地'
       q(sector, 'gps').textContent = real
-        ? `GPS: ${p.demLat.toFixed(4)}, ${p.demLon.toFixed(4)} · Z${p.demZoom}`
-        : 'GPS: 46.4076, 11.8524 · GRID 56×56'
+        ? `坐标：${p.demLat.toFixed(4)}, ${p.demLon.toFixed(4)} · Z${p.demZoom}`
+        : '坐标：46.4076, 11.8524 · 网格 56×56'
       q(sector, 'meta').textContent = real
-        ? 'ELEV: TERRAIN TILES © MAPZEN/TILEZEN'
-        : `SEED ${String(p.seed).padStart(4, '0')} · MESH ${p.resolution}²`
+        ? '高程：Terrain Tiles © MAPZEN/TILEZEN'
+        : `种子：${String(p.seed).padStart(4, '0')} · 网格：${p.resolution}²`
     },
     setSelected(i, poi) {
       selected = i
       poiEls.forEach((m, j) => m.classList.toggle('active', j === i))
       if (i >= 0 && poi) {
         q(panel, 'pName').textContent = poi.id
-        q(panel, 'pKind').textContent = poi.kind
-        q(panel, 'pElev').textContent = `${poi.feet.toLocaleString()} FT`
+      q(panel, 'pKind').textContent = poi.kind === 'PEAK' ? '山峰' : poi.kind === 'BASIN' ? '盆地' : poi.kind
+      q(panel, 'pElev').textContent = `${poi.feet.toLocaleString()} 英尺`
         q(panel, 'pGrid').textContent = poi.grid
         panel.style.display = 'block'
       } else {
@@ -164,8 +165,8 @@ export function createHud2D({ onSelectPoi, onDeselect, onScan }) {
         q(telem, 'focus').textContent = data.focus.toFixed(2)
         q(telem, 'fps').textContent = String(Math.round(data.fps))
         q(telem, 'clock').textContent = data.clock
-        q(reticle, 'alt').textContent = `ALT ${data.coneAlt.toFixed(2)}`
-        q(reticle, 'spin').textContent = `SPIN ${data.spin.toFixed(2)}`
+        q(reticle, 'alt').textContent = `高度 ${data.coneAlt.toFixed(2)}`
+        q(reticle, 'spin').textContent = `旋转 ${data.spin.toFixed(2)}`
       }
     },
     setVisible(vis) {

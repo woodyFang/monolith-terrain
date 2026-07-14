@@ -584,21 +584,21 @@ let demBusy = false
 async function loadRealTerrain() {
   if (demBusy) return
   demBusy = true
-  loadingEl.textContent = 'fetching elevation tiles…'
+  loadingEl.textContent = '正在获取高程瓦片…'
   loadingEl.classList.remove('hidden')
   try {
     dem = await loadDem({ lat: params.demLat, lon: params.demLon, zoom: params.demZoom })
     terrain.setDem(dem)
     params.source = 'real'
     gui.controllersRecursive().forEach((c) => c.updateDisplay())
-    loadingEl.textContent = 'generating terrain…'
+    loadingEl.textContent = '正在生成地形…'
     regenerateTerrain()
   } catch (err) {
     console.error('DEM load failed:', err)
-    loadingEl.textContent = 'elevation fetch failed — check connection'
+    loadingEl.textContent = '高程获取失败，请检查网络连接'
     setTimeout(() => {
       loadingEl.classList.add('hidden')
-      loadingEl.textContent = 'generating terrain…'
+      loadingEl.textContent = '正在生成地形…'
     }, 2600)
   } finally {
     demBusy = false
@@ -627,7 +627,7 @@ function regenerateTerrain() {
 
 // ------------------------------------------------------------------ GUI
 
-const gui = new GUI({ title: 'EXPERIMENT / 001' })
+const gui = new GUI({ title: '实验 / 001' })
 
 const copyCtrl = gui
   .add(
@@ -644,18 +644,18 @@ const copyCtrl = gui
           document.execCommand('copy')
           ta.remove()
         }
-        copyCtrl.name('copied ✓')
-        setTimeout(() => copyCtrl.name('copy parameters'), 1200)
+        copyCtrl.name('已复制 ✓')
+        setTimeout(() => copyCtrl.name('复制参数'), 1200)
       },
     },
     'copy'
   )
-  .name('copy parameters')
+  .name('复制参数')
 
-const fSource = gui.addFolder('Terrain source')
+const fSource = gui.addFolder('地形来源')
 fSource
-  .add(params, 'source', { 'procedural noise': 'noise', 'real world (DEM)': 'real' })
-  .name('source')
+  .add(params, 'source', { '程序噪声': 'noise', '真实世界（DEM）': 'real' })
+  .name('来源')
   .onChange((v) => {
     if (v === 'real') loadRealTerrain()
     else regenerateTerrain()
@@ -663,7 +663,7 @@ fSource
 const latCtrl = { lat: null, lon: null }
 fSource
   .add(params, 'demLocation', Object.keys(DEM_PRESETS))
-  .name('location')
+  .name('地点')
   .onChange((name) => {
     const p = DEM_PRESETS[name]
     if (!p) return // Custom: use the lat/lon fields below
@@ -673,23 +673,23 @@ fSource
     latCtrl.lon.updateDisplay()
     if (params.source === 'real') loadRealTerrain()
   })
-latCtrl.lat = fSource.add(params, 'demLat', -85, 85, 0.0001).name('latitude')
-latCtrl.lon = fSource.add(params, 'demLon', -180, 180, 0.0001).name('longitude')
+latCtrl.lat = fSource.add(params, 'demLat', -85, 85, 0.0001).name('纬度')
+latCtrl.lon = fSource.add(params, 'demLon', -180, 180, 0.0001).name('经度')
 fSource
   .add(params, 'demZoom', [10, 11, 12, 13, 14])
-  .name('detail (zoom)')
+  .name('细节（缩放）')
   .onChange(() => {
     if (params.source === 'real') loadRealTerrain()
   })
 fSource
   .add(params, 'demExaggeration', 0.5, 5, 0.1)
-  .name('vertical scale')
+  .name('垂直夸张')
   .onFinishChange(() => {
     if (params.source === 'real') regenerateTerrain()
   })
-fSource.add({ load: () => loadRealTerrain() }, 'load').name('load location ⤓')
+fSource.add({ load: () => loadRealTerrain() }, 'load').name('加载地点 ⤓')
 
-const fTerrain = gui.addFolder('Terrain')
+const fTerrain = gui.addFolder('地形')
 fTerrain.add(params, 'seed', 1, 9999, 1).onFinishChange(regenerateTerrain)
 fTerrain
   .add(
@@ -702,165 +702,165 @@ fTerrain
     },
     'randomize'
   )
-  .name('randomize seed')
+  .name('随机种子')
 fTerrain.add(params, 'scale', 0.04, 0.4, 0.005).onFinishChange(regenerateTerrain)
 fTerrain.add(params, 'octaves', 2, 8, 1).onFinishChange(regenerateTerrain)
 fTerrain.add(params, 'lacunarity', 1.6, 3.2, 0.05).onFinishChange(regenerateTerrain)
 fTerrain.add(params, 'gain', 0.3, 0.7, 0.01).onFinishChange(regenerateTerrain)
 fTerrain.add(params, 'amplitude', 0.5, 7, 0.1).onFinishChange(regenerateTerrain)
-fTerrain.add(params, 'warp', 0, 6, 0.1).name('domain warp').onFinishChange(regenerateTerrain)
-fTerrain.add(params, 'detail', 0, 0.8, 0.01).name('fine detail').onFinishChange(regenerateTerrain)
+fTerrain.add(params, 'warp', 0, 6, 0.1).name('域扭曲').onFinishChange(regenerateTerrain)
+fTerrain.add(params, 'detail', 0, 0.8, 0.01).name('细节噪声').onFinishChange(regenerateTerrain)
 fTerrain.add(params, 'detailScale', 0.5, 6, 0.1).onFinishChange(regenerateTerrain)
 fTerrain.add(params, 'resolution', [256, 384, 512, 768, 1024]).onFinishChange(regenerateTerrain)
 
-const fSurface = gui.addFolder('Surface material')
-fSurface.addColor(params, 'color').onChange(() => terrain.updateMaterial(params))
-fSurface.add(params, 'roughness', 0, 1, 0.01).onFinishChange(() => terrain.rebuildRoughness(params))
+const fSurface = gui.addFolder('表面材质')
+fSurface.addColor(params, 'color').name('颜色').onChange(() => terrain.updateMaterial(params))
+fSurface.add(params, 'roughness', 0, 1, 0.01).name('粗糙度').onFinishChange(() => terrain.rebuildRoughness(params))
 fSurface
   .add(params, 'roughnessVariation', 0, 0.6, 0.01)
-  .name('roughness noise')
+  .name('粗糙度噪声')
   .onFinishChange(() => terrain.rebuildRoughness(params))
 fSurface
   .add(params, 'roughnessScale', 1, 16, 0.5)
-  .name('roughness scale')
+  .name('粗糙度尺度')
   .onFinishChange(() => terrain.rebuildRoughness(params))
-fSurface.add(params, 'bumpScale', 0, 2, 0.05).name('micro bump').onChange(() => terrain.updateMaterial(params))
-fSurface.add(params, 'envMapIntensity', 0, 1.5, 0.05).name('env reflection').onChange(() => terrain.updateMaterial(params))
+fSurface.add(params, 'bumpScale', 0, 2, 0.05).name('微表面凹凸').onChange(() => terrain.updateMaterial(params))
+fSurface.add(params, 'envMapIntensity', 0, 1.5, 0.05).name('环境反射').onChange(() => terrain.updateMaterial(params))
 
-const fCamera = gui.addFolder('Camera & focus')
+const fCamera = gui.addFolder('相机与焦点')
 fCamera.add(params, 'fov', 20, 60, 1).onChange((v) => {
   camera.fov = v
   camera.updateProjectionMatrix()
 })
-fCamera.add(params, 'autoFocus').name('autofocus cone')
-fCamera.add(params, 'focusDistance', 5, 60, 0.1).name('focus distance').listen()
-fCamera.add(params, 'focusRange', 0.5, 25, 0.1).name('focus range').onChange((v) => {
+fCamera.add(params, 'autoFocus').name('自动对焦单体')
+fCamera.add(params, 'focusDistance', 5, 60, 0.1).name('焦点距离').listen()
+fCamera.add(params, 'focusRange', 0.5, 25, 0.1).name('焦点范围').onChange((v) => {
   dof.cocMaterial.worldFocusRange = v
 })
-fCamera.add(params, 'bokehScale', 0, 8, 0.1).name('bokeh scale').onChange((v) => {
+fCamera.add(params, 'bokehScale', 0, 8, 0.1).name('散景强度').onChange((v) => {
   dof.bokehScale = v
   dofPass.enabled = v > 0
 })
 
-const fMap = gui.addFolder('Map overlay')
-fMap.add(params, 'mapTint', 0, 1, 0.02).name('hypsometric tint').onChange((v) => (terrain.mapUniforms.uTint.value = v))
+const fMap = gui.addFolder('地图叠加')
+fMap.add(params, 'mapTint', 0, 1, 0.02).name('高程着色').onChange((v) => (terrain.mapUniforms.uTint.value = v))
 fMap
   .add(params, 'heightContrast', 0.5, 20, 0.1)
-  .name('height contrast')
+  .name('高度对比度')
   .onChange((v) => (terrain.mapUniforms.uHeightContrast.value = v))
 fMap
   .add(params, 'heightPivot', 0, 1, 0.01)
-  .name('height pivot')
+  .name('高度中心')
   .onChange((v) => (terrain.mapUniforms.uHeightPivot.value = v))
 const rebuildRamp = () => terrain.rebuildRamp(params)
-fMap.addColor(params, 'gradLow').name('gradient: low').onChange(rebuildRamp)
-fMap.addColor(params, 'gradMid1').name('gradient: mid 1').onChange(rebuildRamp)
-fMap.addColor(params, 'gradMid2').name('gradient: mid 2').onChange(rebuildRamp)
-fMap.addColor(params, 'gradHigh').name('gradient: high').onChange(rebuildRamp)
-fMap.add(params, 'gradMid1Pos', 0, 1, 0.01).name('mid 1 position').onChange(rebuildRamp)
-fMap.add(params, 'gradMid2Pos', 0, 1, 0.01).name('mid 2 position').onChange(rebuildRamp)
+fMap.addColor(params, 'gradLow').name('渐变：低').onChange(rebuildRamp)
+fMap.addColor(params, 'gradMid1').name('渐变：中低').onChange(rebuildRamp)
+fMap.addColor(params, 'gradMid2').name('渐变：中高').onChange(rebuildRamp)
+fMap.addColor(params, 'gradHigh').name('渐变：高').onChange(rebuildRamp)
+fMap.add(params, 'gradMid1Pos', 0, 1, 0.01).name('中低位置').onChange(rebuildRamp)
+fMap.add(params, 'gradMid2Pos', 0, 1, 0.01).name('中高位置').onChange(rebuildRamp)
 fMap
   .add(params, 'slopeTint', 0, 1, 0.02)
-  .name('slope brown')
+  .name('坡面棕色')
   .onChange((v) => (terrain.mapUniforms.uSlopeTint.value = v))
 fMap
   .add(params, 'contourInterval', 0.04, 0.6, 0.01)
-  .name('contour interval')
+  .name('等高线间隔')
   .onChange((v) => (terrain.mapUniforms.uContourInterval.value = v))
 fMap
   .add(params, 'contourOpacity', 0, 1, 0.02)
-  .name('contour opacity')
+  .name('等高线不透明度')
   .onChange((v) => (terrain.mapUniforms.uContourOpacity.value = v))
 fMap
   .addColor(params, 'contourColor')
-  .name('contour color')
+  .name('等高线颜色')
   .onChange((v) => terrain.mapUniforms.uContourColor.value.set(v))
-fMap.add(params, 'gridStep', 2, 14, 0.5).name('grid size').onChange((v) => (terrain.mapUniforms.uGridStep.value = v))
-fMap.add(params, 'gridOpacity', 0, 1, 0.02).name('grid opacity').onChange((v) => (terrain.mapUniforms.uGridOpacity.value = v))
-fMap.add(params, 'labels').name('place labels').onChange((v) => (labels.visible = v))
+fMap.add(params, 'gridStep', 2, 14, 0.5).name('网格尺寸').onChange((v) => (terrain.mapUniforms.uGridStep.value = v))
+fMap.add(params, 'gridOpacity', 0, 1, 0.02).name('网格不透明度').onChange((v) => (terrain.mapUniforms.uGridOpacity.value = v))
+fMap.add(params, 'labels').name('地点标签').onChange((v) => (labels.visible = v))
 
-const fLook = gui.addFolder('Look')
-fLook.add(params, 'exposure', 0.2, 3, 0.02).onChange((v) => (exposureFx.uniforms.get('exposure').value = v))
-fLook.add(params, 'contrast', -0.2, 0.5, 0.01).onChange((v) => (contrastFx.uniforms.get('contrast').value = v))
-fLook.add(params, 'saturation', -1, 0, 0.02).onChange((v) => (hueSat.saturation = v))
-fLook.add(params, 'vignette', 0, 1, 0.02).onChange((v) => (vignette.darkness = v))
-fLook.add(params, 'grain', 0, 0.5, 0.01).onChange((v) => (grain.blendMode.opacity.value = v))
-fLook.add(params, 'fogNear', 5, 60, 0.5).name('fog start').onChange((v) => (scene.fog.near = v))
-fLook.add(params, 'fogFar', 15, 90, 0.5).name('fog end').onChange((v) => (scene.fog.far = v))
+const fLook = gui.addFolder('画面效果')
+fLook.add(params, 'exposure', 0.2, 3, 0.02).name('曝光').onChange((v) => (exposureFx.uniforms.get('exposure').value = v))
+fLook.add(params, 'contrast', -0.2, 0.5, 0.01).name('对比度').onChange((v) => (contrastFx.uniforms.get('contrast').value = v))
+fLook.add(params, 'saturation', -1, 0, 0.02).name('饱和度').onChange((v) => (hueSat.saturation = v))
+fLook.add(params, 'vignette', 0, 1, 0.02).name('暗角').onChange((v) => (vignette.darkness = v))
+fLook.add(params, 'grain', 0, 0.5, 0.01).name('颗粒').onChange((v) => (grain.blendMode.opacity.value = v))
+fLook.add(params, 'fogNear', 5, 60, 0.5).name('雾开始').onChange((v) => (scene.fog.near = v))
+fLook.add(params, 'fogFar', 15, 90, 0.5).name('雾结束').onChange((v) => (scene.fog.far = v))
 fLook.addColor(params, 'fogColor').onChange((v) => {
   scene.fog.color.set(v)
   scene.background.set(v)
 })
-fLook.add(params, 'surveyLines').name('survey circles').onChange((v) => (hud3.lines.visible = v))
+fLook.add(params, 'surveyLines').name('测绘圆环').onChange((v) => (hud3.lines.visible = v))
 
-const fHud = gui.addFolder('HUD')
-fHud.add(params, 'hud').name('show HUD').onChange((v) => hud2.setVisible(v))
-fHud.add(params, 'hudOpacity', 0, 1, 0.02).name('HUD opacity').onChange((v) => hud2.setOpacity(v))
+const fHud = gui.addFolder('界面 HUD')
+fHud.add(params, 'hud').name('显示 HUD').onChange((v) => hud2.setVisible(v))
+fHud.add(params, 'hudOpacity', 0, 1, 0.02).name('HUD 不透明度').onChange((v) => hud2.setOpacity(v))
 fHud
   .add(params, 'uiBlur', 0, 30, 1)
-  .name('panel blur')
+  .name('面板模糊')
   .onChange((v) => document.documentElement.style.setProperty('--hud-blur', `${v}px`))
 fHud
   .add(params, 'uiBgOpacity', 0, 1, 0.02)
-  .name('panel bg opacity')
+  .name('面板背景不透明度')
   .onChange((v) => document.documentElement.style.setProperty('--hud-bg-alpha', v))
 fHud
   .addColor(params, 'hudAccent')
-  .name('accent color')
+  .name('强调色')
   .onChange((v) => {
     document.documentElement.style.setProperty('--hud-accent', v)
     regenerateHud()
   })
 fHud
   .addColor(params, 'hudInk')
-  .name('ink color')
+  .name('墨色')
   .onChange((v) => {
     document.documentElement.style.setProperty('--hud-ink', v)
     regenerateHud()
   })
-fHud.add(params, 'sweepSpeed', 0, 3, 0.05).name('sweep speed')
+fHud.add(params, 'sweepSpeed', 0, 3, 0.05).name('扫描速度')
 fHud
   .addColor(params, 'scanColor')
-  .name('scan color')
+  .name('扫描颜色')
   .onChange((v) => terrain.mapUniforms.uScanColor.value.set(v))
-fHud.add(params, 'scanDuration', 1, 8, 0.1).name('scan duration')
+fHud.add(params, 'scanDuration', 1, 8, 0.1).name('扫描时长')
 fHud
   .add(params, 'scanWidth', 0.05, 4, 0.05)
-  .name('scan width')
+  .name('扫描宽度')
   .onChange((v) => (terrain.mapUniforms.uScanWidth.value = v))
 fHud
   .add(params, 'scanBlur', 0, 3, 0.02)
-  .name('scan blur')
+  .name('扫描模糊')
   .onChange((v) => (terrain.mapUniforms.uScanBlur.value = v))
 fHud
   .add(params, 'scanDispHeight', 0, 2, 0.02)
-  .name('wave height')
+  .name('波峰高度')
   .onChange((v) => (terrain.mapUniforms.uScanDispH.value = v))
 fHud
   .add(params, 'scanDispFalloff', 0.1, 6, 0.05)
-  .name('wave falloff')
+  .name('波峰衰减')
   .onChange((v) => (terrain.mapUniforms.uScanDispW.value = v))
-fHud.add({ scan: () => (scanStart = performance.now() / 1000) }, 'scan').name('trigger scan')
+fHud.add({ scan: () => (scanStart = performance.now() / 1000) }, 'scan').name('触发扫描')
 
-const fMotion = gui.addFolder('Motion')
-fMotion.add(params, 'coneSpin', 0, 3, 0.05).name('cone spin')
-fMotion.add(params, 'coneTilt', 0, 0.5, 0.01).name('cursor tilt')
-fMotion.add(params, 'coneDrift', 0, 2, 0.05).name('cursor drift')
-fMotion.add(params, 'bob', 0, 0.3, 0.01).name('hover bob')
-fMotion.add(params, 'ringSpeed', 0, 6, 0.1).name('ring speed')
-fMotion.add(params, 'flyDuration', 0.4, 4, 0.1).name('fly duration')
-fMotion.add(params, 'flyEasing', ['smooth', 'glide', 'linear']).name('fly easing')
+const fMotion = gui.addFolder('动态')
+fMotion.add(params, 'coneSpin', 0, 3, 0.05).name('单体旋转')
+fMotion.add(params, 'coneTilt', 0, 0.5, 0.01).name('光标倾斜')
+fMotion.add(params, 'coneDrift', 0, 2, 0.05).name('光标漂移')
+fMotion.add(params, 'bob', 0, 0.3, 0.01).name('悬浮起伏')
+fMotion.add(params, 'ringSpeed', 0, 6, 0.1).name('环速度')
+fMotion.add(params, 'flyDuration', 0.4, 4, 0.1).name('飞行时长')
+fMotion.add(params, 'flyEasing', ['smooth', 'glide', 'linear']).name('飞行缓动')
 
 const POI_IDS = ['PK-01', 'PK-02', 'PK-03', 'PK-04', 'DEP-05']
-const fTour = gui.addFolder('Tour')
-fTour.add(params, 'tourFrom', POI_IDS).name('from')
-fTour.add(params, 'tourTo', POI_IDS).name('to')
-fTour.add(params, 'tourDuration', 4, 40, 0.5).name('duration (s)')
-fTour.add(params, 'tourAltitude', 0.8, 10, 0.1).name('altitude')
-fTour.add(params, 'tourSmoothing', 0, 1, 0.02).name('path smoothing')
-fTour.add(params, 'tourLook', 0.02, 0.3, 0.01).name('look ahead')
-fTour.add(params, 'tourBank', 0, 3, 0.05).name('bank into turns')
-fTour.add({ start: startTour }, 'start').name('▶ start tour')
+const fTour = gui.addFolder('导览')
+fTour.add(params, 'tourFrom', POI_IDS).name('起点')
+fTour.add(params, 'tourTo', POI_IDS).name('终点')
+fTour.add(params, 'tourDuration', 4, 40, 0.5).name('时长（秒）')
+fTour.add(params, 'tourAltitude', 0.8, 10, 0.1).name('高度')
+fTour.add(params, 'tourSmoothing', 0, 1, 0.02).name('路径平滑')
+fTour.add(params, 'tourLook', 0.02, 0.3, 0.01).name('前视距离')
+fTour.add(params, 'tourBank', 0, 3, 0.05).name('转弯倾斜')
+fTour.add({ start: startTour }, 'start').name('▶ 开始导览')
 fTour.add(
   {
     stop: () => {
@@ -869,20 +869,20 @@ fTour.add(
     },
   },
   'stop'
-).name('■ stop')
+).name('■ 停止')
 
-const fPerf = gui.addFolder('Performance')
+const fPerf = gui.addFolder('性能')
 fPerf
   .add(params, 'pixelRatio', 0.5, 2, 0.05)
-  .name('render scale')
+  .name('渲染比例')
   .onChange((v) => {
     renderer.setPixelRatio(v)
     composer.setSize(window.innerWidth, window.innerHeight)
   })
-fPerf.add(params, 'shadowMode', ['dynamic', 'static', 'off']).name('shadows').onChange(applyShadowMode)
+fPerf.add(params, 'shadowMode', ['dynamic', 'static', 'off']).name('阴影').onChange(applyShadowMode)
 fPerf
   .add(params, 'shadowRes', [1024, 2048, 4096])
-  .name('shadow resolution')
+  .name('阴影分辨率')
   .onChange((v) => {
     sun.shadow.mapSize.set(v, v)
     if (sun.shadow.map) {
@@ -891,20 +891,20 @@ fPerf
     }
     if (params.shadowMode === 'static') renderer.shadowMap.needsUpdate = true
   })
-fMotion.add(params, 'paused')
+fMotion.add(params, 'paused').name('暂停')
 
-const fLight = gui.addFolder('Light')
-fLight.add(params, 'sunIntensity', 0, 16, 0.1).onChange(placeSun)
-fLight.add(params, 'sunAzimuth', 0, 360, 1).onChange(placeSun)
-fLight.add(params, 'sunElevation', 5, 85, 1).onChange(placeSun)
-fLight.add(params, 'hemiIntensity', 0, 2, 0.05).name('ambient').onChange(placeSun)
+const fLight = gui.addFolder('光照')
+fLight.add(params, 'sunIntensity', 0, 16, 0.1).name('太阳强度').onChange(placeSun)
+fLight.add(params, 'sunAzimuth', 0, 360, 1).name('太阳方位').onChange(placeSun)
+fLight.add(params, 'sunElevation', 5, 85, 1).name('太阳高度').onChange(placeSun)
+fLight.add(params, 'hemiIntensity', 0, 2, 0.05).name('环境光').onChange(placeSun)
 fLight
   .add(params, 'envLight', 0, 1.5, 0.02)
-  .name('env light (shadow fill)')
+  .name('环境补光')
   .onChange((v) => (scene.environmentIntensity = v))
 fLight
   .add(params, 'shadowSoftness', 0, 30, 0.5)
-  .name('shadow softness')
+  .name('阴影柔和度')
   .onChange((v) => (sun.shadow.radius = v))
 
 // only Terrain source and Tour start expanded

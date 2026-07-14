@@ -3,9 +3,9 @@ import { EditableTerrainData, MASK_LAYERS, pointInPolygon } from './editableTerr
 import { MaskOverlay, MASK_COLORS } from './maskOverlay.js'
 
 const TOOL_LABELS = {
-  select: 'SELECT',
-  spline: 'ROAD SPLINE',
-  area: 'BUILDABLE AREA',
+  select: '选择',
+  spline: '道路样条',
+  area: '可建设区域',
 }
 
 function disposeObject(object) {
@@ -74,16 +74,16 @@ export class TerrainEditor {
       <div class="editor-toolbar-row editor-modes"></div>
       <div class="editor-toolbar-row editor-tools"></div>
       <div class="editor-toolbar-row editor-options"></div>
-      <div class="editor-status">EXPLORE / terrain preview</div>
-      <div class="editor-help">Edit mode: click to place points · Enter finish · Esc cancel · Delete remove</div>
+      <div class="editor-status">编辑器 / 浏览 / 地形预览</div>
+      <div class="editor-help">编辑模式：点击放置点 · Enter 完成 · Esc 取消 · Delete 删除</div>
     `
     document.body.appendChild(this.root)
 
     const modes = this.root.querySelector('.editor-modes')
     this.modeButtons = {
-      explore: button('EXPLORE'),
-      edit: button('EDIT'),
-      masks: button('MASKS'),
+      explore: button('浏览'),
+      edit: button('编辑'),
+      masks: button('图层'),
     }
     Object.entries(this.modeButtons).forEach(([mode, element]) => {
       element.addEventListener('click', () => this.setMode(mode))
@@ -92,9 +92,9 @@ export class TerrainEditor {
 
     const tools = this.root.querySelector('.editor-tools')
     this.toolButtons = {
-      select: button('SELECT'),
-      spline: button('ROAD SPLINE'),
-      area: button('BUILDABLE AREA'),
+      select: button('选择'),
+      spline: button('道路样条'),
+      area: button('可建设区域'),
     }
     Object.entries(this.toolButtons).forEach(([tool, element]) => {
       element.addEventListener('click', () => this.setTool(tool))
@@ -103,25 +103,25 @@ export class TerrainEditor {
 
     const options = this.root.querySelector('.editor-options')
     this.layerSelect = document.createElement('select')
-    this.layerSelect.setAttribute('aria-label', 'Active mask layer')
+    this.layerSelect.setAttribute('aria-label', '当前 Mask 图层')
     for (const layer of MASK_LAYERS) {
       const option = document.createElement('option')
       option.value = layer
-      option.textContent = `MASK / ${layer.toUpperCase()}`
+      option.textContent = `图层 / ${this.layerName(layer)}`
       this.layerSelect.appendChild(option)
     }
     this.layerSelect.addEventListener('change', () => this.setLayer(this.layerSelect.value))
     options.appendChild(this.layerSelect)
 
-    this.clearButton = button('CLEAR EDITS')
+    this.clearButton = button('清空编辑')
     this.clearButton.addEventListener('click', () => this.clearEdits())
     options.appendChild(this.clearButton)
 
-    this.previewButton = button('PCG PREVIEW')
+    this.previewButton = button('PCG 预览')
     this.previewButton.addEventListener('click', () => this.togglePreview())
     options.appendChild(this.previewButton)
 
-    this.exportButton = button('EXPORT JSON')
+    this.exportButton = button('导出 JSON')
     this.exportButton.addEventListener('click', () => this.exportProject())
     options.appendChild(this.exportButton)
 
@@ -145,6 +145,17 @@ export class TerrainEditor {
     this.overlay.update()
     this.refreshVisuals()
     this.rebuildPcgPreview()
+  }
+
+  layerName(layer) {
+    return {
+      road: '道路',
+      buildable: '可建设',
+      water: '水域',
+      vegetation: '植被',
+      blocked: '禁建',
+      spawnDensity: '生成密度',
+    }[layer] || layer
   }
 
   setMode(mode) {
@@ -296,7 +307,7 @@ export class TerrainEditor {
     this.selectedId = null
     this.data.clearEdits()
     this.onDataChange()
-    this.setStatus('EDIT LAYERS CLEARED')
+    this.setStatus('编辑图层已清空')
   }
 
   refreshVisuals() {
@@ -389,7 +400,7 @@ export class TerrainEditor {
     this.previewGroup.visible = this.previewVisible
     this.rebuildPcgPreview()
     this.refreshUI()
-    this.setStatus(this.previewVisible ? 'PCG PREVIEW ON' : 'PCG PREVIEW OFF')
+    this.setStatus(this.previewVisible ? 'PCG 预览已开启' : 'PCG 预览已关闭')
   }
 
   onDataChange() {
@@ -397,7 +408,7 @@ export class TerrainEditor {
     this.overlay.update()
     this.refreshVisuals()
     this.rebuildPcgPreview()
-    this.setStatus(`${this.data.splines.length} SPLINE / ${this.data.regions.length} AREA`)
+    this.setStatus(`${this.data.splines.length} 条样条 / ${this.data.regions.length} 个区域`)
   }
 
   getProject() {
@@ -419,7 +430,7 @@ export class TerrainEditor {
     const json = JSON.stringify(this.getProject(), null, 2)
     try {
       await navigator.clipboard.writeText(json)
-      this.setStatus('PROJECT JSON COPIED')
+      this.setStatus('项目 JSON 已复制')
     } catch {
       const blob = new Blob([json], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
@@ -428,12 +439,12 @@ export class TerrainEditor {
       link.download = 'monolith-terrain-project.json'
       link.click()
       URL.revokeObjectURL(url)
-      this.setStatus('PROJECT JSON DOWNLOADED')
+      this.setStatus('项目 JSON 已下载')
     }
   }
 
   setStatus(message) {
-    if (this.root) this.root.querySelector('.editor-status').textContent = `EDITOR / ${message}`
+    if (this.root) this.root.querySelector('.editor-status').textContent = `编辑器 / ${message}`
   }
 
   refreshUI() {
@@ -448,10 +459,10 @@ export class TerrainEditor {
     this.root.querySelector('.editor-options').style.display = this.mode === 'explore' ? 'none' : 'flex'
     this.root.querySelector('.editor-help').style.display = this.mode === 'edit' ? 'block' : 'none'
     this.renderer.domElement.style.cursor = this.mode === 'edit' ? (this.tool === 'select' ? 'default' : 'crosshair') : 'grab'
-    if (this.mode === 'explore') this.setStatus('EXPLORE / TERRAIN PREVIEW')
-    else if (this.mode === 'masks') this.setStatus(`MASKS / ${this.activeLayer.toUpperCase()}`)
-    else if (this.draftPoints.length) this.setStatus(`${TOOL_LABELS[this.tool]} / ${this.draftPoints.length} POINTS`)
-    else this.setStatus(`EDIT / ${TOOL_LABELS[this.tool]} / READY`)
+    if (this.mode === 'explore') this.setStatus('浏览 / 地形预览')
+    else if (this.mode === 'masks') this.setStatus(`图层 / ${this.layerName(this.activeLayer)}`)
+    else if (this.draftPoints.length) this.setStatus(`${TOOL_LABELS[this.tool]} / ${this.draftPoints.length} 个点`)
+    else this.setStatus(`编辑 / ${TOOL_LABELS[this.tool]} / 就绪`)
   }
 
   dispose() {
