@@ -9,17 +9,14 @@ import {
   DepthOfFieldEffect,
   VignetteEffect,
   NoiseEffect,
-  SMAAEffect,
   HueSaturationEffect,
   BrightnessContrastEffect,
   ToneMappingEffect,
   ToneMappingMode,
   Effect,
-  EffectAttribute,
   BlendFunction,
 } from 'postprocessing'
 import { Terrain } from './terrain.js'
-import { createCone } from './cone.js'
 import { createLabels, disposeLabels } from './labels.js'
 import { createHud3D, findPois } from './hud3d.js'
 import { createHud2D } from './hud2d.js'
@@ -114,17 +111,9 @@ const params = {
   saturation: -0.35,
   vignette: 0.6,
   grain: 0.35,
-  fogNear: 35.5,
-  fogFar: 50,
-  fogColor: '#ffffff',
-  fogOpacity: 0.58,
   surveyLines: true,
 
   // motion
-  coneSpin: 0,
-  coneTilt: 0,
-  coneDrift: 0,
-  bob: 0,
   ringSpeed: 1.0,
   flyDuration: 1.8,
   flyEasing: 'smooth',
@@ -141,7 +130,7 @@ const params = {
 
   // performance
   pixelRatio: Math.min(window.devicePixelRatio, 2),
-  shadowMode: 'dynamic',
+  shadowMode: 'static',
   shadowRes: 2048,
 
   // light
@@ -175,10 +164,7 @@ renderer.toneMapping = THREE.NoToneMapping
 container.appendChild(renderer.domElement)
 
 const scene = new THREE.Scene()
-scene.background = new THREE.Color(params.fogColor)
-// Fog is applied as a screen-space post effect below. Keeping scene.fog null
-// prevents camera altitude from washing the whole terrain into the background.
-scene.fog = null
+scene.background = new THREE.Color(0xffffff)
 
 const camera = new THREE.PerspectiveCamera(params.fov, window.innerWidth / window.innerHeight, 0.5, 220)
 camera.position.set(0, 18, 19)
@@ -234,11 +220,35 @@ function applyShadowMode() {
   renderer.shadowMap.autoUpdate = params.shadowMode === 'dynamic'
   if (params.shadowMode === 'static') renderer.shadowMap.needsUpdate = true
 }
+applyShadowMode()
 
 // ------------------------------------------------------------------ world
 
+let gui = null
+
 const terrain = new Terrain(params)
 scene.add(terrain.mesh)
+
+function applyTerrainPreset(preset) {
+  Object.assign(params, preset)
+  terrain.setDem(null)
+  terrain.rebuild(params)
+  terrain.rebuildRoughness(params)
+  terrain.updateMaterial(params)
+  terrain.rebuildRamp(params)
+  terrain.mapUniforms.uTint.value = params.mapTint
+  terrain.mapUniforms.uContourInterval.value = params.contourInterval
+  terrain.mapUniforms.uContourOpacity.value = params.contourOpacity
+  terrain.mapUniforms.uGridStep.value = params.gridStep
+  terrain.mapUniforms.uGridOpacity.value = params.gridOpacity
+  terrain.mapUniforms.uHeightContrast.value = params.heightContrast
+  terrain.mapUniforms.uHeightPivot.value = params.heightPivot
+  terrain.mapUniforms.uSlopeTint.value = params.slopeTint
+  terrain.mapUniforms.uContourColor.value.set(params.contourColor)
+  placeSun()
+  applyShadowMode()
+  gui?.controllersRecursive().forEach((controller) => controller.updateDisplay())
+}
 
 const editor = new TerrainEditor({
   scene,
@@ -247,10 +257,8 @@ const editor = new TerrainEditor({
   controls,
   terrain,
   params,
+  onTerrainPreset: applyTerrainPreset,
 })
-
-const cone = createCone()
-scene.add(cone.group)
 
 const labelOpts = () => ({ real: params.source === 'real', toFeet: (h) => terrain.heightToFeet(h) })
 let labels = createLabels(terrain.sample, params.seed, labelOpts())
@@ -477,10 +485,6 @@ const hud2 = createHud2D({
     flyTo(returnPose.saved ? returnPose.pos : HOME.pos, returnPose.saved ? returnPose.target : HOME.target)
     returnPose.saved = false
   },
-  onScan() {
-    scanStart = performance.now() / 1000
-    cone.kick(3)
-  },
 })
 hud2.setPois(pois)
 hud2.setStatic(params)
@@ -499,12 +503,9 @@ controls.addEventListener('start', () => {
   camera.up.set(0, 1, 0)
 })
 
-// real-world mode strips the fiction: no cone/reticle, no dial platform
+// synthetic terrain keeps the fictional dial platform; real DEMs do not
 function applySourceMode() {
-  const real = params.source === 'real'
-  cone.group.visible = !real
-  hud3.platform.visible = !real
-  hud2.setReticleVisible(!real)
+  hud3.platform.visible = params.source !== 'real'
 }
 
 function regenerateHud() {
@@ -548,81 +549,31 @@ class ExposureEffect extends Effect {
   }
 }
 
-class ScreenSpaceFogEffect extends Effect {
-  constructor({ color, near, far, opacity, cameraNear, cameraFar }) {
-    super(
-      'ScreenSpaceFogEffect',
-      `
-uniform vec3 fogColor;
-uniform float fogNear;
-uniform float fogFar;
-uniform float fogOpacity;
-uniform float cameraNear;
-uniform float cameraFar;
-
-float linearViewDistance(float depth) {
-  float viewZ = (cameraNear * cameraFar) / ((cameraFar - cameraNear) * depth - cameraFar);
-  return max(0.0, -viewZ);
-}
-
-void mainImage(const in vec4 inputColor, const in vec2 uv, const in float depth, out vec4 outputColor) {
-  float distanceToSurface = linearViewDistance(depth);
-  float factor = smoothstep(fogNear, fogFar, distanceToSurface) * fogOpacity;
-  outputColor = vec4(mix(inputColor.rgb, fogColor, clamp(factor, 0.0, 1.0)), inputColor.a);
-}`,
-      {
-        attributes: EffectAttribute.DEPTH,
-        uniforms: new Map([
-          ['fogColor', new THREE.Uniform(color)],
-          ['fogNear', new THREE.Uniform(near)],
-          ['fogFar', new THREE.Uniform(far)],
-          ['fogOpacity', new THREE.Uniform(opacity)],
-          ['cameraNear', new THREE.Uniform(cameraNear)],
-          ['cameraFar', new THREE.Uniform(cameraFar)],
-        ]),
-      }
-    )
-  }
-}
-
 const exposureFx = new ExposureEffect(params.exposure)
-const screenFog = new ScreenSpaceFogEffect({
-  color: new THREE.Color(params.fogColor),
-  near: params.fogNear,
-  far: params.fogFar,
-  opacity: params.fogOpacity,
-  cameraNear: camera.near,
-  cameraFar: camera.far,
-})
 const toneMap = new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC })
 const contrastFx = new BrightnessContrastEffect({ brightness: 0, contrast: params.contrast })
 const hueSat = new HueSaturationEffect({ saturation: params.saturation })
 const grain = new NoiseEffect({ blendFunction: BlendFunction.OVERLAY, premultiply: false })
 grain.blendMode.opacity.value = params.grain
 const vignette = new VignetteEffect({ darkness: params.vignette, offset: 0.28 })
-const smaa = new SMAAEffect()
 
 const dofPass = new EffectPass(camera, dof)
-composer.addPass(dofPass)
-composer.addPass(new EffectPass(camera, screenFog))
-composer.addPass(new EffectPass(camera, exposureFx, toneMap, hueSat, contrastFx, grain, vignette, smaa))
-// skip the whole DOF pass when bokeh is zero — it's pure cost with no visual effect
-dofPass.enabled = params.bokehScale > 0
-
-// ------------------------------------------------------------------ pointer
-
-const mouse = new THREE.Vector2(0, 0)
-let lastPointer = null
-window.addEventListener('pointermove', (e) => {
-  const nx = (e.clientX / window.innerWidth) * 2 - 1
-  const ny = -((e.clientY / window.innerHeight) * 2 - 1)
-  if (lastPointer) {
-    const speed = Math.hypot(nx - lastPointer.x, ny - lastPointer.y)
-    cone.kick(speed * 6)
+const finalPostPass = new EffectPass(camera, exposureFx, toneMap, hueSat, contrastFx, grain, vignette)
+composer.addPass(finalPostPass)
+// DepthOfFieldEffect requires a depth texture. Keep its pass out of the composer
+// while bokeh is zero so the renderer doesn't blit depth every frame for a disabled effect.
+let dofPassActive = false
+function setDofEnabled(enabled) {
+  if (enabled === dofPassActive) return
+  if (enabled) {
+    const finalIndex = composer.passes.indexOf(finalPostPass)
+    composer.addPass(dofPass, finalIndex >= 0 ? finalIndex : undefined)
+  } else {
+    composer.removePass(dofPass)
   }
-  lastPointer = { x: nx, y: ny }
-  mouse.set(nx, ny)
-})
+  dofPassActive = enabled
+}
+setDofEnabled(params.bokehScale > 0)
 
 // ------------------------------------------------------------------ regeneration helpers
 
@@ -676,7 +627,7 @@ function regenerateTerrain() {
 
 // ------------------------------------------------------------------ GUI
 
-const gui = new GUI({ title: '实验 / 001' })
+gui = new GUI({ title: '实验 / 001' })
 
 const copyCtrl = gui
   .add(
@@ -744,9 +695,7 @@ fTerrain
   .add(
     {
       randomize() {
-        params.seed = Math.floor(Math.random() * 9999) + 1
-        gui.controllersRecursive().forEach((c) => c.updateDisplay())
-        regenerateTerrain()
+        editor.generateFromSeed(Math.floor(Math.random() * 999999) + 1)
       },
     },
     'randomize'
@@ -781,14 +730,14 @@ fCamera.add(params, 'fov', 20, 60, 1).onChange((v) => {
   camera.fov = v
   camera.updateProjectionMatrix()
 })
-fCamera.add(params, 'autoFocus').name('自动对焦单体')
+fCamera.add(params, 'autoFocus').name('自动对焦地形中心')
 fCamera.add(params, 'focusDistance', 5, 60, 0.1).name('焦点距离').listen()
 fCamera.add(params, 'focusRange', 0.5, 25, 0.1).name('焦点范围').onChange((v) => {
   dof.cocMaterial.worldFocusRange = v
 })
 fCamera.add(params, 'bokehScale', 0, 8, 0.1).name('散景强度').onChange((v) => {
   dof.bokehScale = v
-  dofPass.enabled = v > 0
+  setDofEnabled(v > 0)
 })
 
 const fMap = gui.addFolder('地图叠加')
@@ -834,12 +783,6 @@ fLook.add(params, 'contrast', -0.2, 0.5, 0.01).name('对比度').onChange((v) =>
 fLook.add(params, 'saturation', -1, 0, 0.02).name('饱和度').onChange((v) => (hueSat.saturation = v))
 fLook.add(params, 'vignette', 0, 1, 0.02).name('暗角').onChange((v) => (vignette.darkness = v))
 fLook.add(params, 'grain', 0, 0.5, 0.01).name('颗粒').onChange((v) => (grain.blendMode.opacity.value = v))
-fLook.add(params, 'fogNear', 5, 60, 0.5).name('雾开始').onChange((v) => (scene.fog.near = v))
-fLook.add(params, 'fogFar', 15, 90, 0.5).name('雾结束').onChange((v) => (scene.fog.far = v))
-fLook.addColor(params, 'fogColor').onChange((v) => {
-  scene.fog.color.set(v)
-  scene.background.set(v)
-})
 fLook.add(params, 'surveyLines').name('测绘圆环').onChange((v) => (hud3.lines.visible = v))
 
 const fHud = gui.addFolder('界面 HUD')
@@ -892,10 +835,6 @@ fHud
 fHud.add({ scan: () => (scanStart = performance.now() / 1000) }, 'scan').name('触发扫描')
 
 const fMotion = gui.addFolder('动态')
-fMotion.add(params, 'coneSpin', 0, 3, 0.05).name('单体旋转')
-fMotion.add(params, 'coneTilt', 0, 0.5, 0.01).name('光标倾斜')
-fMotion.add(params, 'coneDrift', 0, 2, 0.05).name('光标漂移')
-fMotion.add(params, 'bob', 0, 0.3, 0.01).name('悬浮起伏')
 fMotion.add(params, 'ringSpeed', 0, 6, 0.1).name('环速度')
 fMotion.add(params, 'flyDuration', 0.4, 4, 0.1).name('飞行时长')
 fMotion.add(params, 'flyEasing', ['smooth', 'glide', 'linear']).name('飞行缓动')
@@ -1036,7 +975,6 @@ function tick() {
 
   if (!params.paused) {
     hud3.update(dt, t, params)
-    cone.update(dt, t, mouse, params)
   }
 
   // terrain scan ripple progress
@@ -1051,7 +989,7 @@ function tick() {
   }
 
   if (params.autoFocus) {
-    params.focusDistance = camera.position.distanceTo(cone.getFocusPoint())
+    params.focusDistance = camera.position.distanceTo(controls.target)
   }
   dof.cocMaterial.worldFocusDistance = params.focusDistance
 
@@ -1060,15 +998,12 @@ function tick() {
     const sph = new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target))
     const secs = Math.floor(t)
     hud2.update(dt, camera, window.innerWidth, window.innerHeight, {
-      conePoint: cone.getFocusPoint(),
       pois,
       az: THREE.MathUtils.radToDeg(sph.theta),
       el: 90 - THREE.MathUtils.radToDeg(sph.phi),
       focus: params.focusDistance,
       fps,
       clock: `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`,
-      coneAlt: cone.group.position.y,
-      spin: params.coneSpin,
     })
   }
 

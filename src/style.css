@@ -134,49 +134,6 @@ body {
 .hud-row b { font-weight: 600; }
 .hud-row .accent { color: var(--hud-accent); }
 
-/* cone tracking reticle */
-.hud-reticle {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 0;
-  height: 0;
-  opacity: 1;
-  transition: opacity 0.2s;
-  will-change: transform;
-}
-.hud-reticle .rb {
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  border: 1.5px solid var(--hud-ink);
-  opacity: 0.9;
-}
-.hud-reticle .rb.tl { left: -46px; top: -46px; border-right: 0; border-bottom: 0; }
-.hud-reticle .rb.tr { right: -46px; top: -46px; border-left: 0; border-bottom: 0; }
-.hud-reticle .rb.bl { left: -46px; bottom: -46px; border-right: 0; border-top: 0; }
-.hud-reticle .rb.br { right: -46px; bottom: -46px; border-left: 0; border-top: 0; }
-
-.hud-ret-label {
-  position: absolute;
-  left: 58px;
-  top: 0;
-  transform: translateY(-50%);
-  white-space: nowrap;
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  pointer-events: auto;
-  cursor: pointer;
-  padding: 4px 8px;
-  background: var(--hud-paper);
-  border-left: 2px solid var(--hud-accent);
-  backdrop-filter: blur(var(--hud-blur));
-}
-.hud-ret-label:hover { background: rgba(25, 35, 42, 0.96); }
-.hud-ret-name { font-weight: 700; }
-.hud-ret-name i { color: var(--hud-accent); font-style: normal; }
-.hud-ret-sub { opacity: 0.6; font-size: 9px; }
-
 /* POI markers */
 .hud-poi {
   position: absolute;
@@ -459,6 +416,30 @@ body {
   flex: 1 1 auto;
   min-width: 0;
   background: #172630;
+}
+.editor-landform-panel {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.editor-landform-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: rgba(238, 243, 245, 0.58);
+  font-size: 9px;
+}
+.editor-landform-panel input,
+.editor-landform-panel select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 30px;
+  padding: 0 7px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 4px;
+  background: #172630;
+  color: #f4f7f8;
+  font: 600 10px/1 'SF Mono', 'Fira Code', ui-monospace, monospace;
 }
 .editor-status {
   display: flex;

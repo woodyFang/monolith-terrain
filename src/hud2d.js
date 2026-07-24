@@ -1,8 +1,8 @@
 import * as THREE from 'three'
 
-// Screen-space FUI layer: sector data block, telemetry, cone tracking reticle,
-// POI markers with leader lines, and a selection panel. Anchored elements are
-// projected from world space every frame.
+// Screen-space FUI layer: sector data block, telemetry, POI markers with
+// leader lines, and a selection panel. Anchored elements are projected from
+// world space every frame.
 
 const el = (cls, html = '') => {
   const d = document.createElement('div')
@@ -11,7 +11,7 @@ const el = (cls, html = '') => {
   return d
 }
 
-export function createHud2D({ onSelectPoi, onDeselect, onScan }) {
+export function createHud2D({ onSelectPoi, onDeselect }) {
   const root = el('hud')
   document.body.appendChild(root)
 
@@ -44,18 +44,6 @@ export function createHud2D({ onSelectPoi, onDeselect, onScan }) {
      <div class="hud-row"><span>时间</span><b data-t="clock">—</b></div>`
   )
   root.appendChild(telem)
-
-  // ---- cone tracking reticle
-  const reticle = el(
-    'hud-reticle',
-    `<span class="rb tl"></span><span class="rb tr"></span><span class="rb bl"></span><span class="rb br"></span>
-     <div class="hud-ret-label">
-       <div class="hud-ret-name">MONOLITH-01 <i>▸ 跟踪中</i></div>
-       <div class="hud-ret-sub"><span data-t="alt">高度 —</span> · <span data-t="spin">旋转 —</span></div>
-     </div>`
-  )
-  root.appendChild(reticle)
-  reticle.querySelector('.hud-ret-label').addEventListener('click', () => onScan?.())
 
   // ---- selection panel (anchored below the clicked marker)
   const panel = el(
@@ -101,7 +89,6 @@ export function createHud2D({ onSelectPoi, onDeselect, onScan }) {
 
   const pos = { x: 0, y: 0, visible: true }
   let acc = 0
-  let reticleOn = true
 
   return {
     root,
@@ -131,13 +118,6 @@ export function createHud2D({ onSelectPoi, onDeselect, onScan }) {
       }
     },
     update(dt, camera, w, h, data) {
-      // anchored: reticle on the cone
-      if (reticleOn) {
-        project(camera, w, h, data.conePoint, pos)
-        reticle.style.transform = `translate(${pos.x.toFixed(1)}px, ${pos.y.toFixed(1)}px)`
-        reticle.style.opacity = pos.visible ? 1 : 0
-      }
-
       // anchored: POI markers
       data.pois.forEach((p, i) => {
         const m = poiEls[i]
@@ -165,16 +145,10 @@ export function createHud2D({ onSelectPoi, onDeselect, onScan }) {
         q(telem, 'focus').textContent = data.focus.toFixed(2)
         q(telem, 'fps').textContent = String(Math.round(data.fps))
         q(telem, 'clock').textContent = data.clock
-        q(reticle, 'alt').textContent = `高度 ${data.coneAlt.toFixed(2)}`
-        q(reticle, 'spin').textContent = `旋转 ${data.spin.toFixed(2)}`
       }
     },
     setVisible(vis) {
       root.style.display = vis ? 'block' : 'none'
-    },
-    setReticleVisible(vis) {
-      reticleOn = vis
-      reticle.style.display = vis ? '' : 'none'
     },
     setOpacity(o) {
       root.style.opacity = o

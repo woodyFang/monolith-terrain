@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "terrain": { "worldSize": 56, "resolution": 128 },
+  "operators": [
+    { "id": "shape-001", "type": "basin", "center": [-7, -4], "radiusX": 11, "radiusZ": 8, "rotation": 0.3, "height": -2.5, "blendWidth": 4.2, "rimHeight": 0.65, "sharpness": 1.25, "blendMode": "min", "affectedMasks": ["buildable"] },
+    { "id": "shape-002", "type": "mountain", "center": [-3, -2], "radiusX": 8, "radiusZ": 7, "rotation": -0.4, "height": 5.5, "blendWidth": 3.5, "rimHeight": 0, "sharpness": 2.3, "blendMode": "max", "affectedMasks": ["blocked"] },
+    { "id": "shape-003", "type": "ridge", "center": [5, 4], "radiusX": 17, "radiusZ": 3.5, "rotation": -0.65, "height": 4.8, "blendWidth": 3, "rimHeight": 0, "sharpness": 1.9, "blendMode": "max", "affectedMasks": ["blocked"] },
+    { "id": "shape-004", "type": "plateau", "center": [2, 0], "radiusX": 8, "radiusZ": 5, "rotation": 0.55, "height": 1.2, "blendWidth": 2.4, "rimHeight": 0, "sharpness": 1, "blendMode": "replace", "affectedMasks": ["buildable"] },
+    { "id": "shape-005", "type": "mountain", "center": [9, -9], "radiusX": 9, "radiusZ": 6, "rotation": 0.75, "height": 3.6, "blendWidth": 4.5, "rimHeight": 0, "sharpness": 1.5, "blendMode": "add", "affectedMasks": ["blocked"] },
+    { "id": "shape-006", "type": "basin", "center": [10, 9], "radiusX": 6, "radiusZ": 9, "rotation": -0.2, "height": -1.7, "blendWidth": 3.8, "rimHeight": 0.4, "sharpness": 1.4, "blendMode": "add", "affectedMasks": ["buildable"] },
+    { "id": "shape-007", "type": "plateau", "center": [-13, 10], "radiusX": 5, "radiusZ": 5, "rotation": 0, "height": 3.5, "blendWidth": 1.2, "rimHeight": 0, "sharpness": 1, "blendMode": "replace", "affectedMasks": ["buildable"] },
+    { "id": "shape-008", "type": "ridge", "center": [-12, -14], "radiusX": 12, "radiusZ": 2.5, "rotation": 0.15, "height": 5.8, "blendWidth": 1.5, "rimHeight": 0, "sharpness": 2.5, "blendMode": "max", "affectedMasks": ["blocked"] }
+  ],
+  "regions": [],
+  "splines": [],
+  "params": { "source": "noise", "seed": 6606, "scale": 0.11, "octaves": 7, "lacunarity": 2.45, "gain": 0.55, "amplitude": 2.8, "warp": 4.8, "detail": 0.28, "detailScale": 3.8 }
+}

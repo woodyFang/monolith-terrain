@@ -1,5 +1,11 @@
 import * as THREE from 'three'
-import { EditableTerrainData, MASK_LAYERS, pointInPolygon } from './editableTerrainData.js'
+import { Line2 } from 'three/addons/lines/Line2.js'
+import { LineGeometry } from 'three/addons/lines/LineGeometry.js'
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js'
+import { EditableTerrainData, MASK_LAYERS, sampleSplinePoints, validateTerrainProject } from './editableTerrainData.js'
+import { buildDerivedFields } from './pcg/derivedFields.js'
+import { generateBuildings } from './pcg/buildingGenerator.js'
+import { OccupancyLayer } from './pcg/occupancyLayer.js'
 import { MaskOverlay, MASK_COLORS } from './maskOverlay.js'
 import { generateSeededLayout } from './seededTerrainGenerator.js'
 
@@ -7,6 +13,7 @@ const TOOL_LABELS = {
   select: '选择',
   spline: '道路样条',
   area: '可建设区域',
+  landform: '地貌形状',
 }
 
 function disposeObject(object) {
@@ -32,25 +39,168 @@ function button(text, className = '') {
   return element
 }
 
+function thickLine(points, { color, width = 4, opacity = 1, renderOrder = 35 }) {
+  const geometry = new LineGeometry()
+  geometry.setPositions(points.flatMap((point) => [point.x, point.y, point.z]))
+  const material = new LineMaterial({
+    color: new THREE.Color(color).getHex(),
+    linewidth: width,
+    transparent: opacity < 1,
+    opacity,
+    depthTest: false,
+    depthWrite: false,
+    worldUnits: false,
+  })
+  const line = new Line2(geometry, material)
+  line.computeLineDistances()
+  line.renderOrder = renderOrder
+  return line
+}
+
+function outlinedLine(points, color, { selected = false, renderOrder = 35 } = {}) {
+  const group = new THREE.Group()
+  group.add(
+    thickLine(points, {
+      color: '#06151b',
+      width: selected ? 9 : 7,
+      opacity: 0.94,
+      renderOrder: renderOrder - 1,
+    })
+  )
+  group.add(
+    thickLine(points, {
+      color,
+      width: selected ? 6 : 4,
+      opacity: 1,
+      renderOrder,
+    })
+  )
+  return group
+}
+
+function selectionMarker(position, { hovered = false } = {}) {
+  const group = new THREE.Group()
+  group.position.copy(position)
+  const material = new THREE.MeshBasicMaterial({
+    color: hovered ? '#fff1a8' : '#ff7a1a',
+    transparent: true,
+    opacity: hovered ? 0.92 : 1,
+    depthTest: false,
+    depthWrite: false,
+  })
+  const outerMaterial = new THREE.MeshBasicMaterial({
+    color: hovered ? '#ffd45c' : '#ff9f43',
+    transparent: true,
+    opacity: hovered ? 0.48 : 0.68,
+    depthTest: false,
+    depthWrite: false,
+  })
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.09, 12, 48), material)
+  ring.rotation.x = Math.PI / 2
+  ring.renderOrder = 44
+  group.add(ring)
+  const outerRing = new THREE.Mesh(new THREE.TorusGeometry(1.02, 0.045, 10, 48), outerMaterial)
+  outerRing.rotation.x = Math.PI / 2
+  outerRing.renderOrder = 43
+  group.add(outerRing)
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1.5, 10), material)
+  stem.position.y = 0.75
+  stem.renderOrder = 44
+  group.add(stem)
+  const tip = new THREE.Mesh(new THREE.OctahedronGeometry(0.2, 0), material)
+  tip.position.y = 1.55
+  tip.renderOrder = 44
+  group.add(tip)
+  return group
+}
+
+function addHandleHitProxy(handle, radius, userData, hitTargets) {
+  const proxy = new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 12, 8),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, colorWrite: false })
+  )
+  proxy.position.copy(handle.position)
+  proxy.userData = { ...userData, hitProxy: true }
+  hitTargets.push(proxy)
+  return proxy
+}
+
+function roadRibbonGeometry(points, width, heightSampler, yOffset) {
+  const vertices = []
+  const indices = []
+  for (let i = 0; i < points.length; i++) {
+    const [x, z] = points[i]
+    const prev = points[Math.max(0, i - 1)]
+    const next = points[Math.min(points.length - 1, i + 1)]
+    const dx = next[0] - prev[0]
+    const dz = next[1] - prev[1]
+    const length = Math.max(1e-5, Math.hypot(dx, dz))
+    const nx = -dz / length
+    const nz = dx / length
+    const y = heightSampler(x, z) + yOffset
+    vertices.push(x + nx * width * 0.5, y, z + nz * width * 0.5, x - nx * width * 0.5, y, z - nz * width * 0.5)
+    if (i > 0) {
+      const a = (i - 1) * 2
+      const b = i * 2
+      indices.push(a, b, a + 1, b, b + 1, a + 1)
+    }
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  return geometry
+}
+
+function roadCurvePoints(item, samplesPerSegment = 12) {
+  return sampleSplinePoints(item.points, samplesPerSegment)
+}
+
+function operatorCurvePoints(operator, heightSampler, segments = 48) {
+  const radiusX = Math.max(0.5, operator.radiusX ?? operator.radius ?? 1)
+  const radiusZ = Math.max(0.5, operator.radiusZ ?? operator.radius ?? 1)
+  const rotation = operator.rotation ?? 0
+  const cos = Math.cos(rotation)
+  const sin = Math.sin(rotation)
+  const [cx, cz] = operator.center || [0, 0]
+  const points = []
+  for (let i = 0; i < segments; i++) {
+    const t = (i / segments) * Math.PI * 2
+    const lx = Math.cos(t) * radiusX
+    const lz = Math.sin(t) * radiusZ
+    const x = cx + lx * cos - lz * sin
+    const z = cz + lx * sin + lz * cos
+    points.push(new THREE.Vector3(x, heightSampler(x, z) + 0.32, z))
+  }
+  return points
+}
+
 export class TerrainEditor {
-  constructor({ scene, camera, renderer, controls, terrain, params }) {
+  constructor({ scene, camera, renderer, controls, terrain, params, onTerrainPreset }) {
     this.scene = scene
     this.camera = camera
     this.renderer = renderer
     this.controls = controls
     this.terrain = terrain
     this.params = params
+    this.onTerrainPreset = onTerrainPreset
     this.mode = 'explore'
     this.tool = 'select'
     this.activeLayer = 'road'
+    this.landformType = 'basin'
     this.selectedId = null
+    this.hoveredHandleKey = null
     this.draftPoints = []
     this.dragging = null
     this.lastClickAt = 0
     this.previewVisible = false
+    this.visualRefreshQueued = false
+    this.lastTerrainHitSource = null
     this.data = new EditableTerrainData({ worldSize: 56, resolution: 128 })
     this.raycaster = new THREE.Raycaster()
     this.pointer = new THREE.Vector2()
+    this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
+    this.terrainHitPoint = new THREE.Vector3()
     this.editorGroup = new THREE.Group()
     this.editorGroup.name = 'TerrainEditor'
     this.previewGroup = new THREE.Group()
@@ -84,14 +234,14 @@ export class TerrainEditor {
       <div class="editor-seedbar">
         <label for="terrain-seed-input">\u79cd\u5b50</label>
         <input id="terrain-seed-input" type="number" min="0" step="1" value="${this.params.seed ?? 7}" />
-        <button class="editor-generate" type="button">\u6309\u79cd\u5b50\u751f\u6210</button>
+        <button class="editor-generate" type="button">\u968f\u673a</button>
       </div>
       <div class="editor-section">
         <div class="editor-section-title"><b>01</b><span>工作模式</span></div>
         <div class="editor-toolbar-row editor-modes"></div>
       </div>
       <div class="editor-section editor-tools-section">
-        <div class="editor-section-title"><b>02</b><span>编辑工具</span><em>数字键 1 / 2 / 3</em></div>
+        <div class="editor-section-title"><b>02</b><span>编辑工具</span><em>数字键 1 / 2 / 3 / 4</em></div>
         <div class="editor-toolbar-row editor-tools"></div>
       </div>
       <div class="editor-section">
@@ -105,7 +255,7 @@ export class TerrainEditor {
 
     this.seedInput = this.root.querySelector('#terrain-seed-input')
     this.generateButton = this.root.querySelector('.editor-generate')
-    this.generateButton.addEventListener('click', () => this.generateFromSeed(this.seedInput.value))
+    this.generateButton.addEventListener('click', () => this.randomizeSeed())
     this.seedInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') this.generateFromSeed(this.seedInput.value)
     })
@@ -130,6 +280,7 @@ export class TerrainEditor {
       select: button('选择'),
       spline: button('道路样条'),
       area: button('可建设区域'),
+      landform: button('地貌形状'),
     }
     Object.entries(this.toolButtons).forEach(([tool, element]) => {
       element.addEventListener('click', () => this.setTool(tool))
@@ -159,6 +310,62 @@ export class TerrainEditor {
     this.exportButton = button('导出 JSON')
     this.exportButton.addEventListener('click', () => this.exportProject())
     options.appendChild(this.exportButton)
+
+    this.importInput = document.createElement('input')
+    this.importInput.type = 'file'
+    this.importInput.accept = 'application/json,.json'
+    this.importInput.hidden = true
+    this.importInput.addEventListener('change', () => this.importProjectFile())
+    options.appendChild(this.importInput)
+
+    this.importButton = button('载入 JSON')
+    this.importButton.addEventListener('click', () => this.importInput.click())
+    options.appendChild(this.importButton)
+
+    const landformSection = document.createElement('div')
+    landformSection.className = 'editor-section editor-landform-section'
+    landformSection.innerHTML = `
+      <div class="editor-section-title"><b>04</b><span>地貌参数</span><em>单击放置 / 选中后可拖拽中心</em></div>
+    `
+    const landformPanel = document.createElement('div')
+    landformPanel.className = 'editor-landform-panel'
+    landformPanel.innerHTML = `
+      <label><span>形状</span><select class="editor-landform-type" aria-label="地貌形状类型">
+        <option value="basin">盆地</option>
+        <option value="mountain">高山</option>
+        <option value="plateau">平台</option>
+        <option value="ridge">山脊</option>
+      </select></label>
+      <label><span>混合</span><select class="editor-landform-blend-mode" aria-label="地貌混合模式">
+        <option value="add">叠加</option>
+        <option value="min">向下</option>
+        <option value="max">向上</option>
+        <option value="replace">替换</option>
+      </select></label>
+      <label><span>高度</span><input class="editor-landform-height" type="number" step="0.1" value="-1.2" /></label>
+      <label><span>半径 X</span><input class="editor-landform-radius-x" type="number" min="0.5" step="0.1" value="6" /></label>
+      <label><span>半径 Z</span><input class="editor-landform-radius-z" type="number" min="0.5" step="0.1" value="6" /></label>
+      <label><span>过渡</span><input class="editor-landform-blend" type="number" min="0" step="0.1" value="2.2" /></label>
+      <label><span>尖锐</span><input class="editor-landform-sharpness" type="number" min="0.1" step="0.1" value="1.4" /></label>
+    `
+    landformSection.appendChild(landformPanel)
+    this.root.insertBefore(landformSection, this.root.querySelector('.editor-status'))
+    this.landformSection = landformSection
+    this.landformPanel = landformPanel
+    this.landformTypeSelect = landformPanel.querySelector('.editor-landform-type')
+    this.landformBlendModeSelect = landformPanel.querySelector('.editor-landform-blend-mode')
+    this.landformHeightInput = landformPanel.querySelector('.editor-landform-height')
+    this.landformRadiusXInput = landformPanel.querySelector('.editor-landform-radius-x')
+    this.landformRadiusZInput = landformPanel.querySelector('.editor-landform-radius-z')
+    this.landformBlendInput = landformPanel.querySelector('.editor-landform-blend')
+    this.landformSharpnessInput = landformPanel.querySelector('.editor-landform-sharpness')
+    this.landformTypeSelect.addEventListener('change', () => this.handleLandformFormChange(true))
+    this.landformBlendModeSelect.addEventListener('change', () => this.handleLandformFormChange())
+    this.landformHeightInput.addEventListener('change', () => this.handleLandformFormChange())
+    this.landformRadiusXInput.addEventListener('change', () => this.handleLandformFormChange())
+    this.landformRadiusZInput.addEventListener('change', () => this.handleLandformFormChange())
+    this.landformBlendInput.addEventListener('change', () => this.handleLandformFormChange())
+    this.landformSharpnessInput.addEventListener('change', () => this.handleLandformFormChange())
 
     this.refreshUI()
   }
@@ -196,18 +403,33 @@ export class TerrainEditor {
     if (this.seedInput) this.seedInput.value = String(parsedSeed)
     this.cancelDraft()
     this.selectedId = null
-    this.data.regions = []
-    this.data.splines = []
-    this.data._nextId = 1
-    for (const spline of layout.splines) this.data.addSpline(spline)
-    for (const region of layout.regions) this.data.addRegion(region)
-    this.data.rebuild()
+    this.data.beginBatch()
+    try {
+      this.data.operators = []
+      this.data.regions = []
+      this.data.splines = []
+      this.data._nextId = 1
+      this.onTerrainPreset?.(layout.terrain)
+      this.data.setBaseSampler(this.terrain.sample)
+      for (const operator of layout.operators || []) this.data.addOperator(operator)
+      for (const spline of layout.splines) this.data.addSpline(spline)
+      for (const region of layout.regions) this.data.addRegion(region)
+    } finally {
+      this.data.endBatch()
+    }
     this.syncTerrainSurface()
     this.overlay.update()
     this.setMode('edit')
     this.refreshVisuals()
     this.rebuildPcgPreview()
-    this.setStatus(`\u79cd\u5b50 ${layout.seed} / \u5df2\u751f\u6210 ${layout.splines.length} \u6761\u8def\u5f84 / ${layout.regions.length} \u4e2a\u533a\u57df`)
+    this.setStatus(
+      `\u79cd\u5b50 ${layout.seed} / ${layout.terrain.archetype} / ${layout.operators?.length || 0} \u4e2a\u5730\u8c8c / ${layout.splines.length} \u6761\u8def\u5f84 / ${layout.regions.length} \u4e2a\u533a\u57df`
+    )
+  }
+
+  randomizeSeed() {
+    const nextSeed = Math.floor(Math.random() * 999999) + 1
+    this.generateFromSeed(nextSeed)
   }
 
   layerName(layer) {
@@ -223,6 +445,7 @@ export class TerrainEditor {
 
   setMode(mode) {
     this.cancelDraft()
+    this.hoveredHandleKey = null
     this.mode = mode
     const editing = mode === 'edit'
     this.configureCameraControls(editing)
@@ -241,11 +464,68 @@ export class TerrainEditor {
 
   setTool(tool) {
     this.cancelDraft()
+    this.hoveredHandleKey = null
     this.tool = tool
     if (tool === 'spline') this.activeLayer = 'road'
-    if (tool === 'area') this.activeLayer = 'buildable'
+    if (tool === 'area' || tool === 'landform') this.activeLayer = 'buildable'
     this.layerSelect.value = this.activeLayer
+    this.refreshLandformForm()
     this.refreshUI()
+  }
+
+  landformTypeDefaults(type) {
+    return {
+      basin: { height: -1.2, radiusX: 7.5, radiusZ: 5.8, blendWidth: 2.8, sharpness: 1.15, blendMode: 'min' },
+      mountain: { height: 2.4, radiusX: 5.5, radiusZ: 5.5, blendWidth: 3.4, sharpness: 1.9, blendMode: 'max' },
+      plateau: { height: 0, radiusX: 5.2, radiusZ: 3.8, blendWidth: 1.4, sharpness: 1, blendMode: 'replace' },
+      ridge: { height: 2.8, radiusX: 12, radiusZ: 3.8, blendWidth: 3.2, sharpness: 1.7, blendMode: 'max' },
+    }[type] || { height: 0, radiusX: 5, radiusZ: 5, blendWidth: 2, sharpness: 1, blendMode: 'add' }
+  }
+
+  handleLandformFormChange(resetDefaults = false) {
+    const type = this.landformTypeSelect.value
+    this.landformType = type
+    if (resetDefaults) {
+      const defaults = this.landformTypeDefaults(type)
+      this.landformBlendModeSelect.value = defaults.blendMode
+      this.landformHeightInput.value = String(defaults.height)
+      this.landformRadiusXInput.value = String(defaults.radiusX)
+      this.landformRadiusZInput.value = String(defaults.radiusZ)
+      this.landformBlendInput.value = String(defaults.blendWidth)
+      this.landformSharpnessInput.value = String(defaults.sharpness)
+    }
+    const selected = this.findObject(this.selectedId)
+    if (this.tool === 'select' && selected?.center && selected.id.startsWith('shape-')) {
+      selected.type = type
+      selected.blendMode = this.landformBlendModeSelect.value
+      selected.height = Number(this.landformHeightInput.value)
+      selected.radiusX = Math.max(0.5, Number(this.landformRadiusXInput.value))
+      selected.radiusZ = Math.max(0.5, Number(this.landformRadiusZInput.value))
+      selected.blendWidth = Math.max(0, Number(this.landformBlendInput.value))
+      selected.sharpness = Math.max(0.1, Number(this.landformSharpnessInput.value))
+      selected.rimHeight = type === 'basin' ? Math.abs(selected.height) * 0.22 : 0
+      selected.affectedMasks = type === 'mountain' || type === 'ridge' ? ['blocked'] : ['buildable']
+      this.onDataChange()
+    }
+    this.refreshUI()
+  }
+
+  refreshLandformForm() {
+    if (!this.landformPanel) return
+    const selected = this.findObject(this.selectedId)
+    if (selected?.center && selected.id.startsWith('shape-')) {
+      this.landformType = selected.type
+      this.landformTypeSelect.value = selected.type
+      this.landformBlendModeSelect.value = selected.blendMode || this.landformTypeDefaults(selected.type).blendMode
+      this.landformHeightInput.value = String(selected.height ?? 0)
+      this.landformRadiusXInput.value = String(selected.radiusX ?? 5)
+      this.landformRadiusZInput.value = String(selected.radiusZ ?? 5)
+      this.landformBlendInput.value = String(selected.blendWidth ?? 2)
+      this.landformSharpnessInput.value = String(selected.sharpness ?? 1)
+      return
+    }
+    this.landformTypeSelect.value = this.landformType
+    this.landformBlendModeSelect.value = this.landformTypeDefaults(this.landformType).blendMode
   }
 
   setLayer(layer) {
@@ -260,8 +540,36 @@ export class TerrainEditor {
     this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
     this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
     this.raycaster.setFromCamera(this.pointer, this.camera)
-    const hit = this.raycaster.intersectObject(this.terrain.mesh, false)[0]
-    return hit?.point || null
+    this.terrain.mesh.updateMatrixWorld(true)
+    const meshHit = this.raycaster.intersectObject(this.terrain.mesh, false)[0]
+    if (meshHit) {
+      this.lastTerrainHitSource = 'mesh'
+      this.terrainHitPoint.copy(meshHit.point)
+      return this.terrainHitPoint
+    }
+    this.groundPlane.constant = -this.terrain.sample(0, 0)
+    if (!this.raycaster.ray.intersectPlane(this.groundPlane, this.terrainHitPoint)) {
+      this.lastTerrainHitSource = null
+      return null
+    }
+    this.lastTerrainHitSource = 'fallback-plane'
+    this.terrainHitPoint.y = this.data.sampleHeight(this.terrainHitPoint.x, this.terrainHitPoint.z)
+    return this.terrainHitPoint
+  }
+
+  handleKey(userData) {
+    return userData ? `${userData.objectId}:${userData.pointIndex ?? 'center'}` : null
+  }
+
+  updateHandleHover(event) {
+    if (this.mode !== 'edit' || this.tool !== 'select' || this.dragging) return
+    const hit = this.getHandleHit(event)
+    const key = this.handleKey(hit?.object.userData)
+    if (key !== this.hoveredHandleKey) {
+      this.hoveredHandleKey = key
+      this.refreshVisuals()
+    }
+    this.renderer.domElement.style.cursor = key ? 'pointer' : 'default'
   }
 
   getHandleHit(event) {
@@ -281,13 +589,40 @@ export class TerrainEditor {
     if (handle && this.tool === 'select') {
       this.selectedId = handle.object.userData.objectId
       this.dragging = handle.object.userData
+      this.hoveredHandleKey = this.handleKey(handle.object.userData)
+      this.renderer.domElement.style.cursor = 'grabbing'
+      this.refreshLandformForm()
+      this.refreshUI()
+      return
+    }
+
+    const point = this.getTerrainHit(event)
+    if (!point) return
+
+    if (this.tool === 'landform') {
+      const type = this.landformTypeSelect?.value || this.landformType
+      const height = Number(this.landformHeightInput.value)
+      const item = this.data.addOperator({
+        type,
+        center: [point.x, point.z],
+        radiusX: Math.max(0.5, Number(this.landformRadiusXInput.value)),
+        radiusZ: Math.max(0.5, Number(this.landformRadiusZInput.value)),
+        blendMode: this.landformBlendModeSelect.value,
+        height,
+        blendWidth: Math.max(0, Number(this.landformBlendInput.value)),
+        sharpness: Math.max(0.1, Number(this.landformSharpnessInput.value)),
+        rimHeight: type === 'basin' ? Math.abs(height) * 0.22 : 0,
+        affectedMasks: type === 'mountain' || type === 'ridge' ? ['blocked'] : ['buildable'],
+      })
+      this.selectedId = item.id
+      this.tool = 'select'
+      this.refreshLandformForm()
+      this.onDataChange()
       this.refreshUI()
       return
     }
 
     if (this.tool !== 'spline' && this.tool !== 'area') return
-    const point = this.getTerrainHit(event)
-    if (!point) return
     const now = performance.now()
     if (now - this.lastClickAt < 320 && this.draftPoints.length >= (this.tool === 'area' ? 3 : 2)) {
       this.finishDraft()
@@ -301,33 +636,60 @@ export class TerrainEditor {
   }
 
   handlePointerMove(event) {
-    if (!this.dragging || this.mode !== 'edit') return
+    if (!this.dragging) {
+      this.updateHandleHover(event)
+      return
+    }
+    if (this.mode !== 'edit') return
     const point = this.getTerrainHit(event)
     if (!point) return
     const target = this.findObject(this.dragging.objectId)
-    if (!target || !target.points[this.dragging.pointIndex]) return
-    target.points[this.dragging.pointIndex][0] = point.x
-    target.points[this.dragging.pointIndex][1] = point.z
+    if (!target) return
+    if (this.dragging.pointIndex !== undefined && target.points?.[this.dragging.pointIndex]) {
+      target.points[this.dragging.pointIndex][0] = point.x
+      target.points[this.dragging.pointIndex][1] = point.z
+    } else if (target.center) {
+      target.center[0] = point.x
+      target.center[1] = point.z
+    }
+    this.scheduleInteractiveRefresh()
+  }
+
+  rebuildInteractiveGeometry() {
     this.data.rebuild()
     this.syncTerrainSurface()
+    this.overlay.updateHeight()
     this.refreshVisuals()
-    this.overlay.update()
-    this.rebuildPcgPreview()
+  }
+
+  scheduleInteractiveRefresh() {
+    if (this.visualRefreshQueued) return
+    this.visualRefreshQueued = true
+    requestAnimationFrame(() => {
+      this.visualRefreshQueued = false
+      if (!this.dragging) return
+      this.rebuildInteractiveGeometry()
+    })
   }
 
   handlePointerUp() {
     if (!this.dragging) return
     this.dragging = null
+    this.renderer.domElement.style.cursor = this.hoveredHandleKey ? 'pointer' : 'default'
     this.onDataChange()
   }
 
   handleKeyDown(event) {
-    if (event.target === this.seedInput) return
+    const inputTarget =
+      event.target === this.seedInput ||
+      event.target?.matches?.('input, select, textarea')
+    if (inputTarget) return
     if (event.key === 'Escape') {
       this.cancelDraft()
       return
     }
     if (event.key === 'Enter' && this.draftPoints.length) {
+      event.preventDefault()
       this.finishDraft()
       return
     }
@@ -338,6 +700,7 @@ export class TerrainEditor {
     if (event.key === '1') this.setTool('select')
     if (event.key === '2') this.setTool('spline')
     if (event.key === '3') this.setTool('area')
+    if (event.key === '4') this.setTool('landform')
     if (event.key.toLowerCase() === 'm') this.setMode(this.mode === 'masks' ? 'explore' : 'masks')
   }
 
@@ -364,19 +727,25 @@ export class TerrainEditor {
   }
 
   findObject(id) {
-    return this.data.regions.find((item) => item.id === id) || this.data.splines.find((item) => item.id === id)
+    return (
+      this.data.operators.find((item) => item.id === id) ||
+      this.data.regions.find((item) => item.id === id) ||
+      this.data.splines.find((item) => item.id === id)
+    )
   }
 
   deleteSelected() {
     if (!this.selectedId) return
     this.data.removeObject(this.selectedId)
     this.selectedId = null
+    this.hoveredHandleKey = null
     this.onDataChange()
   }
 
   clearEdits() {
     this.cancelDraft()
     this.selectedId = null
+    this.hoveredHandleKey = null
     this.data.clearEdits()
     this.onDataChange()
     this.setStatus('编辑图层已清空')
@@ -387,8 +756,35 @@ export class TerrainEditor {
     this.handleMeshes = []
     const addObjectVisual = (item, closed, color) => {
       const selected = item.id === this.selectedId
-      const routeColor = selected ? '#ffb52e' : item.type === 'road' ? '#2cf0a1' : color
-      const points = item.points.map(([x, z]) => new THREE.Vector3(x, this.data.sampleHeight(x, z) + 0.28, z))
+      const routeColor = selected ? '#ff7a1a' : item.type === 'road' ? '#2cf0a1' : color
+      if (item.center) {
+        const ringPoints = operatorCurvePoints(item, (x, z) => this.data.sampleHeight(x, z))
+        ringPoints.push(ringPoints[0].clone())
+        this.editorGroup.add(outlinedLine(ringPoints, routeColor, { selected, renderOrder: 35 }))
+
+        const [x, z] = item.center
+        const userData = { objectId: item.id }
+        const key = this.handleKey(userData)
+        const hovered = key === this.hoveredHandleKey
+        const handle = new THREE.Mesh(
+          new THREE.SphereGeometry(selected ? 0.52 : hovered ? 0.44 : 0.34, 16, 10),
+          new THREE.MeshBasicMaterial({ color: selected ? '#ff7a1a' : hovered ? '#ffe27a' : '#ffffff', depthTest: false })
+        )
+        handle.position.set(x, this.data.sampleHeight(x, z) + 0.52, z)
+        handle.renderOrder = 46
+        handle.userData = userData
+        this.editorGroup.add(handle)
+        this.handleMeshes.push(handle)
+        const proxy = addHandleHitProxy(handle, selected ? 1.05 : 0.88, userData, this.handleMeshes)
+        this.editorGroup.add(proxy)
+        if (selected || hovered) this.editorGroup.add(selectionMarker(handle.position, { hovered: !selected && hovered }))
+        return
+      }
+
+      const points =
+        item.type === 'road'
+          ? roadCurvePoints(item).map(([x, z]) => new THREE.Vector3(x, this.data.sampleHeight(x, z) + 0.28, z))
+          : item.points.map(([x, z]) => new THREE.Vector3(x, this.data.sampleHeight(x, z) + 0.28, z))
 
       if (item.type === 'road' && item.points.length >= 2) {
         const outerBandMaterial = new THREE.MeshBasicMaterial({
@@ -405,35 +801,25 @@ export class TerrainEditor {
           depthTest: false,
           depthWrite: false,
         })
-        for (let i = 1; i < item.points.length; i++) {
-          const [ax, az] = item.points[i - 1]
-          const [bx, bz] = item.points[i]
-          const dx = bx - ax
-          const dz = bz - az
-          const length = Math.max(0.01, Math.hypot(dx, dz))
-          const position = [
-            (ax + bx) / 2,
-            this.data.sampleHeight((ax + bx) / 2, (az + bz) / 2) + 0.2,
-            (az + bz) / 2,
-          ]
-          const angle = -Math.atan2(dz, dx)
-          const outer = new THREE.Mesh(new THREE.BoxGeometry(length, 0.14, (item.width || 4) + 0.8), outerBandMaterial)
-          outer.position.set(...position)
-          outer.rotation.y = angle
-          outer.renderOrder = 30
-          this.editorGroup.add(outer)
-          const inner = new THREE.Mesh(new THREE.BoxGeometry(length, 0.16, item.width || 4), bandMaterial)
-          inner.position.set(position[0], position[1] + 0.06, position[2])
-          inner.rotation.y = angle
-          inner.renderOrder = 31
-          this.editorGroup.add(inner)
-        }
-        const centerline = new THREE.Line(
-          new THREE.BufferGeometry().setFromPoints(item.points.map(([x, z]) => new THREE.Vector3(x, this.data.sampleHeight(x, z) + 0.42, z))),
-          new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: selected ? 1 : 0.9, depthTest: false })
+        const roadPoints = roadCurvePoints(item)
+        const outer = new THREE.Mesh(
+          roadRibbonGeometry(roadPoints, (item.width || 4) + 0.8, (x, z) => this.data.sampleHeight(x, z), 0.2),
+          outerBandMaterial
         )
-        centerline.renderOrder = 33
-        this.editorGroup.add(centerline)
+        outer.renderOrder = 30
+        this.editorGroup.add(outer)
+        const inner = new THREE.Mesh(
+          roadRibbonGeometry(roadPoints, item.width || 4, (x, z) => this.data.sampleHeight(x, z), 0.26),
+          bandMaterial
+        )
+        inner.renderOrder = 31
+        this.editorGroup.add(inner)
+        this.editorGroup.add(
+          thickLine(
+            roadPoints.map(([x, z]) => new THREE.Vector3(x, this.data.sampleHeight(x, z) + 0.42, z)),
+            { color: '#ffffff', width: selected ? 5 : 3, opacity: selected ? 1 : 0.92, renderOrder: 33 }
+          )
+        )
       } else if (closed && item.points.length >= 3) {
         const shape = new THREE.Shape()
         item.points.forEach(([x, z], index) => {
@@ -460,18 +846,7 @@ export class TerrainEditor {
       }
 
       if (closed) points.push(points[0].clone())
-      const outline = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(points),
-        new THREE.LineBasicMaterial({ color: '#07151b', transparent: true, opacity: 0.98, depthTest: false })
-      )
-      outline.renderOrder = 34
-      this.editorGroup.add(outline)
-      const line = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(points),
-        new THREE.LineBasicMaterial({ color: routeColor, transparent: true, opacity: selected ? 1 : 0.98, depthTest: false })
-      )
-      line.renderOrder = 35
-      this.editorGroup.add(line)
+      this.editorGroup.add(outlinedLine(points, routeColor, { selected, renderOrder: 35 }))
 
       if (item.type === 'road' && item.points.length >= 2) {
         const endpointOuterMaterial = new THREE.MeshBasicMaterial({ color: '#06151b', depthTest: false })
@@ -490,41 +865,44 @@ export class TerrainEditor {
       }
       for (let i = 0; i < item.points.length; i++) {
         const [x, z] = item.points[i]
+        const userData = { objectId: item.id, pointIndex: i }
+        const key = this.handleKey(userData)
+        const hovered = key === this.hoveredHandleKey
         const halo = new THREE.Mesh(
-          new THREE.SphereGeometry(selected ? 0.52 : 0.4, 16, 10),
-          new THREE.MeshBasicMaterial({ color: '#06151b', depthTest: false })
+          new THREE.SphereGeometry(selected ? 0.62 : hovered ? 0.54 : 0.42, 16, 10),
+          new THREE.MeshBasicMaterial({ color: selected ? '#5b2205' : '#06151b', depthTest: false })
         )
-        halo.position.set(x, this.data.sampleHeight(x, z) + 0.36, z)
-        halo.renderOrder = 38
+        halo.position.set(x, this.data.sampleHeight(x, z) + 0.38, z)
+        halo.renderOrder = 43
         this.editorGroup.add(halo)
         const handle = new THREE.Mesh(
-          new THREE.SphereGeometry(selected ? 0.34 : 0.27, 16, 10),
-          new THREE.MeshBasicMaterial({ color: selected ? '#ffd36a' : '#ffffff', depthTest: false })
+          new THREE.SphereGeometry(selected ? 0.42 : hovered ? 0.36 : 0.28, 16, 10),
+          new THREE.MeshBasicMaterial({ color: selected ? '#ff7a1a' : hovered ? '#ffe27a' : '#ffffff', depthTest: false })
         )
-        handle.position.set(x, this.data.sampleHeight(x, z) + 0.43, z)
-        handle.renderOrder = 39
-        handle.userData = { objectId: item.id, pointIndex: i }
+        handle.position.set(x, this.data.sampleHeight(x, z) + 0.46, z)
+        handle.renderOrder = 46
+        handle.userData = userData
         this.editorGroup.add(handle)
         this.handleMeshes.push(handle)
+        const proxy = addHandleHitProxy(handle, selected ? 0.95 : 0.78, userData, this.handleMeshes)
+        this.editorGroup.add(proxy)
+        if (selected || hovered) this.editorGroup.add(selectionMarker(handle.position, { hovered: !selected && hovered }))
       }
     }
 
+    this.data.operators.forEach((item) =>
+      addObjectVisual(item, true, item.type === 'mountain' || item.type === 'ridge' ? MASK_COLORS.blocked : '#ffd166')
+    )
     this.data.splines.forEach((item) => addObjectVisual(item, false, MASK_COLORS.road))
     this.data.regions.forEach((item) => addObjectVisual(item, true, MASK_COLORS.buildable))
 
     if (this.draftPoints.length) {
       const draft = this.draftPoints.map(([x, z]) => new THREE.Vector3(x, this.data.sampleHeight(x, z) + 0.3, z))
-      const draftUnderlay = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(draft),
-        new THREE.LineBasicMaterial({ color: '#06151b', linewidth: 3, depthTest: false })
-      )
-      draftUnderlay.renderOrder = 40
-      this.editorGroup.add(draftUnderlay)
       this.editorGroup.add(
-        new THREE.Line(
-          new THREE.BufferGeometry().setFromPoints(draft),
-          new THREE.LineBasicMaterial({ color: this.tool === 'area' ? '#ff4fc3' : '#2cf0a1', depthTest: false })
-        )
+        outlinedLine(draft, this.tool === 'area' ? '#ff4fc3' : '#2cf0a1', {
+          selected: true,
+          renderOrder: 41,
+        })
       )
       draft.forEach((point) => {
         const handle = new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 8), new THREE.MeshBasicMaterial({ color: '#ffffff', depthTest: false }))
@@ -537,43 +915,57 @@ export class TerrainEditor {
 
   rebuildPcgPreview() {
     clearGroup(this.previewGroup)
+    this.generated = { buildings: [] }
     if (!this.previewVisible) return
 
     const roadMaterial = new THREE.MeshStandardMaterial({ color: '#d87928', roughness: 0.9 })
     for (const spline of this.data.splines.filter((item) => item.type === 'road')) {
-      for (let i = 1; i < spline.points.length; i++) {
-        const [ax, az] = spline.points[i - 1]
-        const [bx, bz] = spline.points[i]
-        const dx = bx - ax
-        const dz = bz - az
-        const length = Math.hypot(dx, dz)
-        const mesh = new THREE.Mesh(new THREE.BoxGeometry(length, 0.08, spline.width), roadMaterial)
-        mesh.position.set((ax + bx) / 2, this.data.sampleHeight((ax + bx) / 2, (az + bz) / 2) + 0.18, (az + bz) / 2)
-        mesh.rotation.y = -Math.atan2(dz, dx)
-        this.previewGroup.add(mesh)
-      }
+      const roadPoints = roadCurvePoints(spline, 10)
+      const mesh = new THREE.Mesh(
+        roadRibbonGeometry(roadPoints, spline.width, (x, z) => this.data.sampleHeight(x, z), 0.18),
+        roadMaterial
+      )
+      this.previewGroup.add(mesh)
     }
 
-    const buildingMaterial = new THREE.MeshStandardMaterial({ color: '#6e7681', roughness: 0.85 })
-    let buildingCount = 0
-    for (const region of this.data.regions.filter((item) => item.type === 'buildable')) {
-      const xs = region.points.map((point) => point[0])
-      const zs = region.points.map((point) => point[1])
-      const minX = Math.min(...xs)
-      const maxX = Math.max(...xs)
-      const minZ = Math.min(...zs)
-      const maxZ = Math.max(...zs)
-      for (let x = minX + 1.2; x < maxX && buildingCount < 120; x += 3.2) {
-        for (let z = minZ + 1.2; z < maxZ && buildingCount < 120; z += 3.2) {
-          if (!pointInPolygon(x, z, region.points) || this.data.sampleMask('buildable', x, z) < 0.5) continue
-          const h = 0.9 + ((buildingCount * 17) % 11) * 0.12
-          const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.5, h, 1.5), buildingMaterial)
-          mesh.position.set(x, this.data.sampleHeight(x, z) + h / 2 + 0.08, z)
-          mesh.rotation.y = ((buildingCount * 13) % 30) * (Math.PI / 180)
-          this.previewGroup.add(mesh)
-          buildingCount++
-        }
+    const fields = buildDerivedFields(this.data)
+    const occupancy = new OccupancyLayer({ worldSize: this.data.worldSize, resolution: this.data.resolution })
+    const buildings = generateBuildings({
+      seed: this.params.seed,
+      data: this.data,
+      fields,
+      occupancy,
+      options: { density: 1, spacing: 3.4 },
+    })
+    this.generated.buildings = buildings
+
+    const materials = {
+      小房屋: new THREE.MeshStandardMaterial({ color: '#7f8791', roughness: 0.86 }),
+      中型建筑: new THREE.MeshStandardMaterial({ color: '#69717c', roughness: 0.88 }),
+      塔楼: new THREE.MeshStandardMaterial({ color: '#535b68', roughness: 0.82 }),
+    }
+    const roofMaterial = new THREE.MeshStandardMaterial({ color: '#d87928', roughness: 0.75 })
+
+    for (const building of buildings) {
+      const [width, height, depth] = building.scale
+      const [x, y, z] = building.position
+      const group = new THREE.Group()
+      group.position.set(x, y, z)
+      group.rotation.y = building.rotationY
+      group.userData.generatedId = building.id
+
+      const body = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), materials[building.type] || materials.小房屋)
+      body.position.y = height / 2 + 0.08
+      group.add(body)
+
+      if (building.type !== '塔楼') {
+        const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(width, depth) * 0.62, 0.5, 4), roofMaterial)
+        roof.position.y = height + 0.42
+        roof.rotation.y = Math.PI / 4
+        group.add(roof)
       }
+
+      this.previewGroup.add(group)
     }
   }
 
@@ -591,7 +983,7 @@ export class TerrainEditor {
     this.overlay.update()
     this.refreshVisuals()
     this.rebuildPcgPreview()
-    this.setStatus(`${this.data.splines.length} 条样条 / ${this.data.regions.length} 个区域`)
+    this.setStatus(`${this.data.operators.length} 个地貌 / ${this.data.splines.length} 条样条 / ${this.data.regions.length} 个区域`)
   }
 
   getProject() {
@@ -600,6 +992,14 @@ export class TerrainEditor {
       params: {
         source: this.params.source,
         seed: this.params.seed,
+        scale: this.params.scale,
+        octaves: this.params.octaves,
+        lacunarity: this.params.lacunarity,
+        gain: this.params.gain,
+        amplitude: this.params.amplitude,
+        warp: this.params.warp,
+        detail: this.params.detail,
+        detailScale: this.params.detailScale,
         demLocation: this.params.demLocation,
         demLat: this.params.demLat,
         demLon: this.params.demLon,
@@ -607,6 +1007,53 @@ export class TerrainEditor {
         demExaggeration: this.params.demExaggeration,
       },
     }
+  }
+
+  async importProjectFile() {
+    const file = this.importInput.files?.[0]
+    if (!file) return
+    try {
+      const project = JSON.parse(await file.text())
+      validateTerrainProject(project)
+      this.importProject(project)
+      this.setStatus(
+        `项目已载入 / ${project.operators?.length || 0} 个地貌 / ${project.splines?.length || 0} 条样条 / ${project.regions?.length || 0} 个区域`
+      )
+    } catch (error) {
+      console.warn('Unable to import terrain project', error)
+      this.setStatus(`项目 JSON 无效 / ${error.message}`)
+    } finally {
+      this.importInput.value = ''
+    }
+  }
+
+  importProject(project) {
+    validateTerrainProject(project)
+    const seed = Number.isFinite(Number(project.params?.seed)) ? Number(project.params.seed) >>> 0 : this.params.seed
+    this.params.seed = seed
+    this.seedInput.value = String(seed)
+    this.cancelDraft()
+    this.selectedId = null
+    this.dragging = null
+    this.lastClickAt = 0
+    if (project.params?.source === 'noise') {
+      this.onTerrainPreset?.({ ...this.params, ...project.params, source: 'noise', seed })
+      this.data.beginBatch()
+      try {
+        this.data.setBaseSampler(this.terrain.sample)
+        this.data.loadJSON(project)
+      } finally {
+        this.data.endBatch()
+      }
+    } else {
+      this.data.loadJSON(project)
+    }
+    this.syncTerrainSurface()
+    this.overlay.update()
+    this.refreshVisuals()
+    this.rebuildPcgPreview()
+    this.setMode('edit')
+    this.refreshLandformForm()
   }
 
   async exportProject() {
@@ -640,8 +1087,18 @@ export class TerrainEditor {
     this.layerSelect.value = this.activeLayer
     this.root.querySelector('.editor-tools').style.display = 'flex'
     this.root.querySelector('.editor-options').style.display = 'flex'
+    const selected = this.findObject(this.selectedId)
+    this.landformSection.style.display = this.mode === 'edit' && (this.tool === 'landform' || selected?.center) ? 'block' : 'none'
     this.root.querySelector('.editor-help').style.display = this.mode === 'edit' ? 'flex' : 'none'
-    this.renderer.domElement.style.cursor = this.mode === 'edit' ? (this.tool === 'select' ? 'default' : 'crosshair') : 'grab'
+    this.renderer.domElement.style.cursor = this.dragging
+      ? 'grabbing'
+      : this.mode === 'edit'
+        ? this.tool === 'select'
+          ? this.hoveredHandleKey
+            ? 'pointer'
+            : 'default'
+          : 'crosshair'
+        : 'grab'
     if (this.mode === 'explore') this.setStatus('浏览 / 地形预览')
     else if (this.mode === 'masks') this.setStatus(`图层 / ${this.layerName(this.activeLayer)}`)
     else if (this.draftPoints.length) this.setStatus(`${TOOL_LABELS[this.tool]} / ${this.draftPoints.length} 个点`)

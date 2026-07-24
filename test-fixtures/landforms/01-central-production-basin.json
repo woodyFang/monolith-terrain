@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "terrain": { "worldSize": 56, "resolution": 128 },
+  "operators": [
+    {
+      "id": "shape-001",
+      "type": "basin",
+      "center": [0, 0],
+      "radiusX": 14,
+      "radiusZ": 11,
+      "rotation": 0.12,
+      "height": -2.2,
+      "blendWidth": 4.5,
+      "rimHeight": 0.55,
+      "sharpness": 1.15,
+      "blendMode": "min",
+      "affectedMasks": ["buildable"]
+    },
+    {
+      "id": "shape-002",
+      "type": "plateau",
+      "center": [0, 0.5],
+      "radiusX": 6.2,
+      "radiusZ": 4.8,
+      "rotation": -0.08,
+      "height": -0.65,
+      "blendWidth": 2.2,
+      "rimHeight": 0,
+      "sharpness": 1,
+      "blendMode": "replace",
+      "affectedMasks": ["buildable"]
+    },
+    {
+      "id": "shape-003",
+      "type": "mountain",
+      "center": [-16, -7],
+      "radiusX": 7,
+      "radiusZ": 8.5,
+      "rotation": -0.35,
+      "height": 3.8,
+      "blendWidth": 3.4,
+      "rimHeight": 0,
+      "sharpness": 1.9,
+      "blendMode": "max",
+      "affectedMasks": ["blocked"]
+    },
+    {
+      "id": "shape-004",
+      "type": "mountain",
+      "center": [16, 8],
+      "radiusX": 7.5,
+      "radiusZ": 9,
+      "rotation": 0.42,
+      "height": 4.2,
+      "blendWidth": 3.8,
+      "rimHeight": 0,
+      "sharpness": 2,
+      "blendMode": "max",
+      "affectedMasks": ["blocked"]
+    }
+  ],
+  "regions": [],
+  "splines": [],
+  "params": {
+    "source": "noise",
+    "seed": 1101,
+    "scale": 0.055,
+    "octaves": 6,
+    "lacunarity": 2.15,
+    "gain": 0.5,
+    "amplitude": 1.65,
+    "warp": 2.2,
+    "detail": 0.12,
+    "detailScale": 2.2
+  }
+}

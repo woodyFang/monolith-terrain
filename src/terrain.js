@@ -246,11 +246,7 @@ if (uScanT >= 0.0) {
         detail * fbm(sDetail, x * detailScale, z * detailScale, 3, 2.3, 0.55) +
         detail * 0.35 * fbm(sDetail, x * detailScale * 4.1 + 31, z * detailScale * 4.1 - 17, 2, 2.2, 0.5)
 
-      // flatten the central excavation basin
-      const r = Math.sqrt(x * x + z * z)
-      const t = smoothstep(BASIN_RADIUS, BASIN_BLEND, r)
-      const floorH = FLOOR_Y + fine * 0.12
-      return lerp(floorH, h + fine, t)
+      return h + fine
     }
   }
 
@@ -292,8 +288,6 @@ if (uScanT >= 0.0) {
       let v = lerp(0.62, 0.95, Math.pow(hn, 0.85))
       v *= lerp(0.78, 1.0, Math.pow(Math.max(0, ny), 0.6))
       v += fbm(sTint, x * 1.7, z * 1.7, 2, 2.2, 0.5) * 0.05
-      const r = Math.sqrt(x * x + z * z)
-      if (r < BASIN_BLEND) v = lerp(0.52, v, smoothstep(BASIN_RADIUS, BASIN_BLEND, r))
       colors[i * 3] = colors[i * 3 + 1] = colors[i * 3 + 2] = v
     }
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
@@ -323,6 +317,7 @@ if (uScanT >= 0.0) {
     geo.computeVertexNormals()
     geo.computeBoundingBox()
     geo.computeBoundingSphere()
+    this.mesh.updateMatrixWorld(true)
     this.mapUniforms.uHeightRange.value.set(minH, maxH)
     this.sample = sample
   }

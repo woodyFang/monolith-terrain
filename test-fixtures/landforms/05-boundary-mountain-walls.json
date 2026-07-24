@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "terrain": { "worldSize": 56, "resolution": 128 },
+  "operators": [
+    { "id": "shape-001", "type": "ridge", "center": [0, -23], "radiusX": 27, "radiusZ": 4, "rotation": 0, "height": 6, "blendWidth": 4, "rimHeight": 0, "sharpness": 1.8, "blendMode": "max", "affectedMasks": ["blocked"] },
+    { "id": "shape-002", "type": "ridge", "center": [0, 23], "radiusX": 27, "radiusZ": 4, "rotation": 0, "height": 6, "blendWidth": 4, "rimHeight": 0, "sharpness": 1.8, "blendMode": "max", "affectedMasks": ["blocked"] },
+    { "id": "shape-003", "type": "ridge", "center": [-23, 0], "radiusX": 27, "radiusZ": 4, "rotation": 1.5707963268, "height": 6, "blendWidth": 4, "rimHeight": 0, "sharpness": 1.8, "blendMode": "max", "affectedMasks": ["blocked"] },
+    { "id": "shape-004", "type": "ridge", "center": [23, 0], "radiusX": 27, "radiusZ": 4, "rotation": 1.5707963268, "height": 6, "blendWidth": 4, "rimHeight": 0, "sharpness": 1.8, "blendMode": "max", "affectedMasks": ["blocked"] },
+    { "id": "shape-005", "type": "basin", "center": [0, 0], "radiusX": 18, "radiusZ": 18, "rotation": 0, "height": -1.2, "blendWidth": 5, "rimHeight": 0.1, "sharpness": 1.05, "blendMode": "min", "affectedMasks": ["buildable"] },
+    { "id": "shape-006", "type": "plateau", "center": [0, 0], "radiusX": 11, "radiusZ": 9, "rotation": 0.15, "height": 0.25, "blendWidth": 3, "rimHeight": 0, "sharpness": 1, "blendMode": "replace", "affectedMasks": ["buildable"] }
+  ],
+  "regions": [],
+  "splines": [],
+  "params": { "source": "noise", "seed": 5505, "scale": 0.045, "octaves": 5, "lacunarity": 2.05, "gain": 0.47, "amplitude": 1.2, "warp": 1.5, "detail": 0.08, "detailScale": 1.8 }
+}
